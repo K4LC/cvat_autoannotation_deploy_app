@@ -1,0 +1,30 @@
+# --- 一時ストレージ (ジョブごとのアップロード/生成物、永続保存しない §17) ---
+/storage/
+storage/
+
+# --- 環境変数 ---
+.env
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# --- モデル/生成物 ---
+*.pt
+*.onnx
+*.zip
+
+# --- ツール/エディタ ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+.DS_Store

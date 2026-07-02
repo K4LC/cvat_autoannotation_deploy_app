@@ -1,0 +1,24 @@
+# イメージに含めない (ビルド軽量化・秘密情報の混入防止)
+.git/
+.gitignore
+.dockerignore
+.env
+docs/
+
+# 一時ストレージ (実行時に volume でマウントするためイメージには不要 §11.4)
+storage/
+
+# Python キャッシュ/仮想環境
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# エディタ
+.idea/
+.vscode/
+.DS_Store
