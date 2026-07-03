@@ -4,19 +4,64 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CVAT 骨格推定モデル デプロイファイル生成</title>
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <!-- T-10 時点の最小フォーム。UI/進捗ポーリングは T-11 で作り込む。 -->
-  <h1>CVAT 骨格推定モデル デプロイファイル生成</h1>
-  <p>作成者名・モデル表示名・SVG・.pt をアップロードすると、CVAT/Nuclio 用の
-     デプロイファイル一式(zip)を生成します。</p>
+  <main class="container">
+    <h1>CVAT 骨格推定モデル デプロイファイル生成</h1>
+    <p class="desc">
+      作成者名・モデル表示名・SVG・YOLO の <code>.pt</code> をアップロードすると、
+      CVAT/Nuclio 用のデプロイファイル一式（<code>function.yaml</code> /
+      <code>main.py</code> / <code>model.onnx</code> / <code>model_handler.py</code>）を
+      生成し、zip でダウンロードできます。
+    </p>
 
-  <form action="/jobs" method="post" enctype="multipart/form-data">
-    <p><label>作成者名 <input type="text" name="author" required /></label></p>
-    <p><label>モデル表示名 <input type="text" name="display_name" required /></label></p>
-    <p><label>SVGファイル <input type="file" name="svg" accept=".svg" required /></label></p>
-    <p><label>.ptファイル <input type="file" name="pt" accept=".pt" required /></label></p>
-    <p><button type="submit">生成する</button></p>
-  </form>
+    <!-- 入力フォーム (§18.2) -->
+    <section id="form-section">
+      <form id="job-form">
+        <div class="field">
+          <label for="author">作成者名</label>
+          <input type="text" id="author" name="author" required />
+        </div>
+        <div class="field">
+          <label for="display_name">モデル表示名</label>
+          <input type="text" id="display_name" name="display_name" required />
+        </div>
+        <div class="field">
+          <label for="svg">SVGファイル</label>
+          <input type="file" id="svg" name="svg" accept=".svg" required />
+        </div>
+        <div class="field">
+          <label for="pt">.ptファイル</label>
+          <input type="file" id="pt" name="pt" accept=".pt" required />
+        </div>
+        <button type="submit" id="submit-btn">生成する</button>
+      </form>
+      <p id="form-error" class="error" hidden></p>
+    </section>
+
+    <!-- 進捗画面 (§18.3) -->
+    <section id="progress-section" hidden>
+      <h2>生成状況</h2>
+      <dl class="meta">
+        <dt>ジョブID</dt><dd id="job-id"></dd>
+        <dt>モデル表示名</dt><dd id="model-name"></dd>
+        <dt>状態</dt><dd id="status-label"></dd>
+      </dl>
+
+      <div class="progress-bar"><div id="progress-fill"></div></div>
+      <p id="progress-message" class="message"></p>
+
+      <!-- 完了画面 (§18.4) -->
+      <div id="result-success" hidden>
+        <a id="download-link" class="btn download" download>zip をダウンロード</a>
+      </div>
+      <p id="result-error" class="error" hidden></p>
+
+      <button id="restart-btn" class="btn secondary" hidden>最初からやり直す</button>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
 </body>
 </html>

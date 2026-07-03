@@ -1,0 +1,114 @@
+/* 画面スタイル (T-11) — シンプルで読みやすい最小構成 */
+
+:root {
+  --accent: #2563eb;
+  --accent-dark: #1d4ed8;
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --border: #d9dce1;
+  --text: #1f2933;
+  --muted: #6b7280;
+  --error: #b91c1c;
+  --success: #15803d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN",
+    Meiryo, sans-serif;
+  line-height: 1.7;
+}
+
+.container {
+  max-width: 640px;
+  margin: 40px auto;
+  padding: 28px 32px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+h1 { font-size: 1.4rem; margin-top: 0; }
+h2 { font-size: 1.15rem; }
+
+.desc { color: var(--muted); font-size: 0.92rem; }
+code {
+  background: #eef1f5;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+.field { margin-bottom: 16px; }
+.field label { display: block; font-weight: 600; margin-bottom: 4px; }
+.field input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+.field input[type="file"] { font-size: 0.9rem; }
+
+.btn,
+button[type="submit"] {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn:hover,
+button[type="submit"]:hover { background: var(--accent-dark); }
+button:disabled { opacity: 0.6; cursor: default; }
+
+.btn.download { background: var(--success); }
+.btn.secondary {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  margin-left: 8px;
+}
+
+.error {
+  color: var(--error);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 4px 12px;
+  font-size: 0.92rem;
+}
+.meta dt { color: var(--muted); }
+.meta dd { margin: 0; word-break: break-all; }
+
+.progress-bar {
+  height: 14px;
+  background: #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 16px 0 6px;
+}
+#progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.message { color: var(--muted); font-size: 0.9rem; min-height: 1.2em; }
+
+#result-success { margin-top: 16px; }
