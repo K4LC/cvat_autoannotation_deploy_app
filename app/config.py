@@ -45,8 +45,10 @@ class Settings(BaseSettings):
     # --- ONNX 変換の既定値 (§6 / §10.4) ---
     onnx_opset: int = 12
     image_size: int = 640
-    # end2end NMS を埋め込む。model_handler.py が NMS 適用済み形式を前提とするため True。
-    onnx_nms: bool = True
+    # end2end NMS は埋め込まない（False=生出力 (1,4+1+kpt*3,N)）。
+    # model_handler.py 側で NMS とキーポイント復元を行う。nms=True はモデルにより
+    # キーポイントを落とす (1,300,6) ことがあり不安定なため False を既定とする。
+    onnx_nms: bool = False
 
     # --- 推論パラメータ既定値 (テンプレートに埋め込む §6) ---
     conf_threshold: float = 0.25

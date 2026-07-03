@@ -50,9 +50,9 @@ def export_to_onnx(
         out_dir: 出力先ディレクトリ（無ければ作成）。
         opset: ONNX opset。未指定なら settings.onnx_opset。
         imgsz: 入力画像サイズ。未指定なら settings.image_size。
-        nms: end2end NMS を埋め込むか。未指定なら settings.onnx_nms。
-            model_handler.py は NMS 適用済みの (1, N, 6+kpt*3) 形式を前提とするため、
-            通常は True にする（False だと生出力 (1, 56, 8400) となり後処理が破綻する）。
+        nms: end2end NMS を埋め込むか。未指定なら settings.onnx_nms（既定 False）。
+            model_handler.py 側で生出力 (1, 4+1+kpt*3, N) をデコードして NMS を行うため
+            通常は False。True にするとモデルによりキーポイントが落ちる (1,300,6) ことがある。
         model_factory: YOLO ローダの差し替え（テスト用）。
 
     Returns:

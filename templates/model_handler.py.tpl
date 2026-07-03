@@ -76,48 +76,72 @@ class ModelHandler:
 
         inp = {self.input_details[0]: im}
         outputs = self.model.run(self.output_details, inp)
-        detections = outputs[0]  # 期待形状 (1, N, 4+1+1+kpt*3)
+        pred = outputs[0]  # YOLOv8-pose の生出力 (1, 4+1+kpt*3, N) を想定
 
         # 初回のみ実際の出力形状をログに出して形式の食い違いを確認できるようにする
         if not getattr(self, "_shape_logged", False):
             print("ONNX outputs:", [o.shape for o in outputs])
             self._shape_logged = True
 
-        detections = detections[0]  # remove batch
+        # (1, C, N) -> (N, C) に整える（channels-first で来る想定）
+        pred = np.squeeze(pred, 0)
+        if pred.shape[0] < pred.shape[1]:
+            pred = pred.T
 
-        # nms=Trueエクスポート時の最低列数チェック（box4+conf1+cls1+kpt3*N）
-        if detections.ndim != 2 or detections.shape[1] < 7:
+        num_cols = pred.shape[1]
+        num_kpts = (num_cols - 5) // 3
+        if num_kpts <= 0 or (num_cols - 5) % 3 != 0:
             raise ValueError(
                 f"unexpected ONNX output shape {outputs[0].shape}. "
-                "nms=True でエクスポートされた (1, N, 6+kpt*3) 形式を想定しています。"
+                "nms=False の生出力 (1, 4+1+kpt*3, N) 形式を想定しています。"
             )
 
+        boxes_xywh = pred[:, :4]           # cx, cy, w, h (letterbox 640 空間)
+        obj_conf = pred[:, 4]              # 物体信頼度（sigmoid 済み）
+        kpts_all = pred[:, 5:].reshape(-1, num_kpts, 3)  # (M, K, [x, y, score])
+
+        # 信頼度で足切り
+        mask = obj_conf >= 0.25
+        boxes_xywh, obj_conf, kpts_all = boxes_xywh[mask], obj_conf[mask], kpts_all[mask]
+        if len(boxes_xywh) == 0:
+            return []
+
+        # cx,cy,w,h -> x1,y1,x2,y2
+        cx, cy, w, h = boxes_xywh[:, 0], boxes_xywh[:, 1], boxes_xywh[:, 2], boxes_xywh[:, 3]
+        xyxy = np.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], axis=1)
+
+        # NMS（クラスは1種の想定）
+        nms_boxes = [
+            [float(x1), float(y1), float(x2 - x1), float(y2 - y1)]
+            for x1, y1, x2, y2 in xyxy
+        ]
+        keep = cv2.dnn.NMSBoxes(nms_boxes, obj_conf.tolist(), 0.25, 0.45)
+        if len(keep) == 0:
+            return []
+        keep = np.array(keep).flatten()
+
+        dw, dh = dwdh
         results = []
+        for i in keep:
+            # bbox を letterbox から元画像座標へ戻す
+            box = xyxy[i].copy()
+            box[[0, 2]] -= dw
+            box[[1, 3]] -= dh
+            box /= ratio
 
-        for det in detections:
-            bbox = det[:4]
-            obj_conf = det[4]
-            cls_id = int(det[5])
-            kpts = det[6:].reshape(-1, 3)
-
-            if obj_conf < 0.25:
-                continue
-
-            # bbox補正
-            bbox -= np.array(dwdh * 2)
-            bbox /= ratio
-
-            # keypoints補正
-            kpts[:, :2] -= np.array(dwdh)
-            kpts[:, :2] /= ratio
+            # keypoints も同様に戻す
+            kp = kpts_all[i].copy()
+            kp[:, 0] -= dw
+            kp[:, 1] -= dh
+            kp[:, :2] /= ratio
 
             results.append(
                 {
-                    "bbox": bbox,
-                    "bbox_score": float(obj_conf),
-                    "class_id": cls_id,
-                    "keypoints": kpts[:, :2],
-                    "keypoint_scores": kpts[:, 2],
+                    "bbox": box,
+                    "bbox_score": float(obj_conf[i]),
+                    "class_id": 0,
+                    "keypoints": kp[:, :2],
+                    "keypoint_scores": kp[:, 2],
                 }
             )
 
