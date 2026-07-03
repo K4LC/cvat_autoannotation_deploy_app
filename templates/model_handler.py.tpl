@@ -76,49 +76,55 @@ class ModelHandler:
 
         inp = {self.input_details[0]: im}
         outputs = self.model.run(self.output_details, inp)
-        pred = outputs[0]  # YOLOv8-pose の生出力 (1, 4+1+kpt*3, N) を想定
+        pred = outputs[0]
 
         # 初回のみ実際の出力形状をログに出して形式の食い違いを確認できるようにする
         if not getattr(self, "_shape_logged", False):
             print("ONNX outputs:", [o.shape for o in outputs])
             self._shape_logged = True
 
-        # (1, C, N) -> (N, C) に整える（channels-first で来る想定）
+        # (1, A, B) -> (M, C)。生出力は channels-first (C, N)、end2end は (N, C)。
         pred = np.squeeze(pred, 0)
         if pred.shape[0] < pred.shape[1]:
             pred = pred.T
-
         num_cols = pred.shape[1]
-        num_kpts = (num_cols - 5) // 3
-        if num_kpts <= 0 or (num_cols - 5) % 3 != 0:
+
+        # フォーマット自動判別（エクスポート時の nms 有無どちらでも動くように）:
+        #   end2end(nms=True): [x1,y1,x2,y2,conf,cls, kpt*3...]  cols = 6 + K*3、NMS済み・xyxy
+        #   生出力(nms=False) : [cx,cy,w,h,conf,     kpt*3...]   cols = 5 + K*3、要NMS・cxcywh
+        if num_cols >= 9 and (num_cols - 6) % 3 == 0:
+            num_kpts = (num_cols - 6) // 3
+            xyxy = pred[:, :4].copy()
+            obj_conf = pred[:, 4]
+            kpts_all = pred[:, 6:].reshape(-1, num_kpts, 3)
+            mask = obj_conf >= 0.25
+            xyxy, obj_conf, kpts_all = xyxy[mask], obj_conf[mask], kpts_all[mask]
+            keep = np.arange(len(xyxy))            # 既に NMS 済み
+        elif num_cols >= 8 and (num_cols - 5) % 3 == 0:
+            num_kpts = (num_cols - 5) // 3
+            cx, cy, w, h = pred[:, 0], pred[:, 1], pred[:, 2], pred[:, 3]
+            xyxy = np.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], axis=1)
+            obj_conf = pred[:, 4]
+            kpts_all = pred[:, 5:].reshape(-1, num_kpts, 3)
+            mask = obj_conf >= 0.25
+            xyxy, obj_conf, kpts_all = xyxy[mask], obj_conf[mask], kpts_all[mask]
+            if len(xyxy) == 0:
+                return []
+            nms_boxes = [
+                [float(x1), float(y1), float(x2 - x1), float(y2 - y1)]
+                for x1, y1, x2, y2 in xyxy
+            ]
+            keep = cv2.dnn.NMSBoxes(nms_boxes, obj_conf.tolist(), 0.25, 0.45)
+            keep = np.array(keep).flatten() if len(keep) else np.array([], dtype=int)
+        else:
             raise ValueError(
                 f"unexpected ONNX output shape {outputs[0].shape}. "
-                "nms=False の生出力 (1, 4+1+kpt*3, N) 形式を想定しています。"
+                "pose(骨格推定)モデルの出力 (生出力 cols=5+kpt*3 / end2end cols=6+kpt*3) を想定しています。"
+                " 検出専用モデル(例: (1,84,8400)=4+80クラス)にはキーポイントがありません。"
             )
 
-        boxes_xywh = pred[:, :4]           # cx, cy, w, h (letterbox 640 空間)
-        obj_conf = pred[:, 4]              # 物体信頼度（sigmoid 済み）
-        kpts_all = pred[:, 5:].reshape(-1, num_kpts, 3)  # (M, K, [x, y, score])
-
-        # 信頼度で足切り
-        mask = obj_conf >= 0.25
-        boxes_xywh, obj_conf, kpts_all = boxes_xywh[mask], obj_conf[mask], kpts_all[mask]
-        if len(boxes_xywh) == 0:
+        if len(xyxy) == 0 or len(keep) == 0:
             return []
-
-        # cx,cy,w,h -> x1,y1,x2,y2
-        cx, cy, w, h = boxes_xywh[:, 0], boxes_xywh[:, 1], boxes_xywh[:, 2], boxes_xywh[:, 3]
-        xyxy = np.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], axis=1)
-
-        # NMS（クラスは1種の想定）
-        nms_boxes = [
-            [float(x1), float(y1), float(x2 - x1), float(y2 - y1)]
-            for x1, y1, x2, y2 in xyxy
-        ]
-        keep = cv2.dnn.NMSBoxes(nms_boxes, obj_conf.tolist(), 0.25, 0.45)
-        if len(keep) == 0:
-            return []
-        keep = np.array(keep).flatten()
 
         dw, dh = dwdh
         results = []

@@ -73,6 +73,19 @@ def export_to_onnx(
 
     try:
         model = factory(str(pt_path))
+    except Exception as exc:  # ultralytics 由来の各種例外をまとめて扱う
+        raise OnnxExportError("モデルファイルの読み込みに失敗しました") from exc
+
+    # 骨格推定(pose)モデルであることを確認する。検出/セグメンテーション等は
+    # キーポイントを持たず後段の model_handler が破綻するため、ここで弾く (F-15)。
+    task = getattr(model, "task", None)
+    if task is not None and task != "pose":
+        raise OnnxExportError(
+            f"アップロードされたモデルは骨格推定(pose)モデルではありません（task={task}）。"
+            "YOLO の pose モデル（.pt）をアップロードしてください。"
+        )
+
+    try:
         exported = model.export(format="onnx", opset=opset, imgsz=imgsz, nms=nms)
     except Exception as exc:  # ultralytics 由来の各種例外をまとめて扱う
         raise OnnxExportError("ONNX変換に失敗しました") from exc
