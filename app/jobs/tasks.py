@@ -87,6 +87,7 @@ def process_job(
             author=record.author,
             display_name=record.display_name,
             function_name=record.function_name,
+            svg_label=record.svg_label,
             parsed=parsed,
         )
         render_all(output_dir, context)

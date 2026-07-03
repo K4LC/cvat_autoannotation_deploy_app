@@ -1,10 +1,11 @@
 """出力フォルダの zip 化 (T-08)
 
-生成済みの 4 ファイルを 1 つのフォルダにまとめ、zip 化する (§8 / F-12 / F-13)。
+生成済みの 5 ファイルを 1 つのフォルダにまとめ、zip 化する (§8 / F-12 / F-13 / req_add §2)。
 
-zip を展開すると以下になる (§8 / AC-07):
+zip を展開すると以下になる (§8 / AC-07 / req_add §2):
     <model_internal_name>/
-    ├── function.yaml
+    ├── function.yaml       (CPU 用)
+    ├── function-gpu.yaml   (GPU 用)
     ├── main.py
     ├── model.onnx
     └── model_handler.py
@@ -24,9 +25,10 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-# zip に含める 4 ファイル (§5.2)。これ以外は含めない。
+# zip に含める 5 ファイル (§5.2 / req_add §2)。これ以外は含めない。
 EXPECTED_FILES: tuple[str, ...] = (
     "function.yaml",
+    "function-gpu.yaml",
     "main.py",
     "model.onnx",
     "model_handler.py",

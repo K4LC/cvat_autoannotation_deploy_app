@@ -10,10 +10,10 @@
   <main class="container">
     <h1>CVAT 骨格推定モデル デプロイファイル生成</h1>
     <p class="desc">
-      作成者名・モデル表示名・SVG・YOLO の <code>.pt</code> をアップロードすると、
-      CVAT/Nuclio 用のデプロイファイル一式（<code>function.yaml</code> /
-      <code>main.py</code> / <code>model.onnx</code> / <code>model_handler.py</code>）を
-      生成し、zip でダウンロードできます。
+      作成者名・モデル表示名・SVGラベル名・SVG・YOLO の <code>.pt</code> をアップロードすると、
+      CVAT/Nuclio 用のデプロイファイル一式（<code>function.yaml</code>(CPU用) /
+      <code>function-gpu.yaml</code>(GPU用) / <code>main.py</code> / <code>model.onnx</code> /
+      <code>model_handler.py</code>）を生成し、zip でダウンロードできます。
     </p>
 
     <!-- 入力フォーム (§18.2) -->
@@ -26,6 +26,11 @@
         <div class="field">
           <label for="display_name">モデル表示名</label>
           <input type="text" id="display_name" name="display_name" required />
+        </div>
+        <div class="field">
+          <label for="svg_label">SVGラベル名</label>
+          <input type="text" id="svg_label" name="svg_label" required />
+          <small class="hint">CVAT 上に表示される骨格オブジェクトのラベル名（例: person）</small>
         </div>
         <div class="field">
           <label for="svg">SVGファイル</label>

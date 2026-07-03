@@ -1,5 +1,5 @@
 metadata:
-  name: onnx-{{ function_name }}-{{ timestamp }}-pose-cpu
+  name: onnx-{{ function_name }}-pose-cpu
   namespace: cvat
   annotations:
     name: {{ display_name_json }}

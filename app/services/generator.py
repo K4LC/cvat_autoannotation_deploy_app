@@ -1,17 +1,19 @@
 """CVAT/Nuclio 用ファイル生成 (T-07)
 
 `templates/*.tpl` (Jinja2) をレンダリングして、出力フォルダへ以下を生成する:
-  - function.yaml       (templates/function.yaml.tpl … CPU ベース)
+  - function.yaml       (templates/function.yaml.tpl … CPU 用)
+  - function-gpu.yaml   (templates/function-gpu.yaml.tpl … GPU 用)
   - main.py             (templates/main.py.tpl)
   - model_handler.py    (templates/model_handler.py.tpl)
 
-GPU 版 (function-gpu.yaml.tpl) は将来用に温存し、MVP では使わない (CPU 固定)。
+CPU/GPU の function.yaml を常に両方生成する (req_add §2)。main.py / model_handler.py は
+CPU/GPU 共通（ラベルは実行時に function.yaml の spec から読むため）。
 
 設計判断 (ユーザー確認済み):
-  - モデル内部名 function_name = normalize_internal_name(display_name)。
-    識別子系 (metadata.name / image tag) には function_name のみを使い、author は
-    含めない（作成者名が日本語/スペースでも常に有効な名前にするため）。
-  - skeleton の親ラベル名・annotations.name・description には表示名(display_name)を使う。
+  - モデル内部名 function_name = normalize_internal_name(display_name) + "-yyyymmddhhmm"。
+    識別子系 (metadata.name / image tag / フォルダ名 / zip名) に使い、author は含めない。
+  - skeleton の親ラベル名 (annotations.spec の "name") には SVGラベル名(svg_label) を使う。
+  - annotations.name・description には表示名(display_name)を使う。
 
 エスケープ安全性:
   annotations.spec に入る JSON (display_name / svg 文字列 / sublabels) は、テンプレ側で
@@ -35,9 +37,12 @@ TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates"
 # 出力する固定モデルファイル名 (§23.5)。
 MODEL_ONNX_NAME = "model.onnx"
 
-# レンダリングするテンプレートと出力名の対応 (CPU 固定)。
+# レンダリングするテンプレートと出力名の対応。
+# CPU 用 (function.yaml) と GPU 用 (function-gpu.yaml) を常に両方生成する
+# (req_add §2)。main.py / model_handler.py は CPU/GPU 共通。
 TEMPLATE_MAP: dict[str, str] = {
     "function.yaml.tpl": "function.yaml",
+    "function-gpu.yaml.tpl": "function-gpu.yaml",
     "main.py.tpl": "main.py",
     "model_handler.py.tpl": "model_handler.py",
 }
@@ -48,6 +53,7 @@ def build_context(
     author: str,
     display_name: str,
     function_name: str,
+    svg_label: str,
     parsed: ParsedSvg,
     timestamp: str | None = None,
 ) -> dict:
@@ -55,13 +61,19 @@ def build_context(
 
     JSON エスケープが必要な値 (spec / display_name / description) は json.dumps で
     整形済みにして渡す。
+
+    Args:
+        svg_label: CVAT に表示する骨格オブジェクトのラベル名 (annotations.spec の "name")。
+                   フォームの「SVGラベル名」入力に対応 (req_add §3)。
+        display_name: CVAT 検出器の表示名 (annotations.name) と説明文に使う。
     """
     ts = timestamp or datetime.now().strftime("%Y%m%d%H%M%S")
 
     # annotations.spec に入る JSON（skeleton 1 個）。json.dumps が全エスケープを担う。
+    # "name" は CVAT 上のラベル名なので SVGラベル名 (svg_label) を使う (req_add §3)。
     spec_list = [
         {
-            "name": display_name,
+            "name": svg_label,
             "type": "skeleton",
             "svg": parsed.svg_info,
             "sublabels": parsed.sublabels,
@@ -102,7 +114,7 @@ def render_all(
     *,
     template_dir: str | Path | None = None,
 ) -> dict[str, Path]:
-    """3 テンプレートをレンダリングして out_dir に書き出す。
+    """TEMPLATE_MAP の全テンプレートをレンダリングして out_dir に書き出す。
 
     Returns:
         {出力ファイル名: 書き出した Path} の辞書。

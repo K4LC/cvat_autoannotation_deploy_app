@@ -58,12 +58,13 @@ class JobRecord(BaseModel):
     progress: int = 0
     message: str = ""
 
-    # ユーザー入力 (§6)
+    # ユーザー入力 (§6 / req_add §3)
     author: str
     display_name: str
+    svg_label: str                           # CVAT ラベル名 (annotations.spec の "name")
 
     # SVG から取得 (§7)
-    function_name: str                       # 正規化済みモデル内部名
+    function_name: str                       # 正規化済みモデル内部名 + -yyyymmddhhmm
     labels: list[str] = Field(default_factory=list)
     keypoints: list[str] | None = None
     skeleton: list[list[int]] | None = None  # keypoint index のペア列 (暫定表現)

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import shutil
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -115,27 +116,32 @@ async def index(request: Request):
 async def create_job(
     author: str = Form(...),
     display_name: str = Form(...),
+    svg_label: str = Form(...),
     svg: UploadFile = File(...),
     pt: UploadFile = File(...),
     store: JobStore = Depends(get_store),
     queue: Queue = Depends(get_job_queue),
 ):
-    """入力を検証し、ジョブを作成して enqueue する (§19.2 / F-02〜F-06)。"""
-    # 1) テキスト入力の検証 (§14.1 / §14.2)
+    """入力を検証し、ジョブを作成して enqueue する (§19.2 / F-02〜F-06 / req_add §4)。"""
+    # 1) テキスト入力の検証 (§14.1 / §14.2 / req_add §4)
     author = (author or "").strip()
     display_name = (display_name or "").strip()
+    svg_label = (svg_label or "").strip()
     if not author:
         raise HTTPException(status_code=400, detail="作成者名を入力してください")
     if not display_name:
         raise HTTPException(status_code=400, detail="モデル表示名を入力してください")
+    if not svg_label:
+        raise HTTPException(status_code=400, detail="SVGラベル名を入力してください")
 
     # 2) 拡張子の検証 (§14.3 / §14.4)
     _check_extension(svg, ".svg")
     _check_extension(pt, ".pt")
 
-    # 3) モデル内部名を表示名から算出 (確定した設計判断)
+    # 3) モデル内部名を表示名から算出し、yyyymmddhhmm を付与 (req_add §5)
+    ts = datetime.now().strftime("%Y%m%d%H%M")
     try:
-        function_name = normalize_internal_name(display_name)
+        function_name = f"{normalize_internal_name(display_name)}-{ts}"
     except InvalidNameError:
         raise HTTPException(
             status_code=400,
@@ -166,6 +172,7 @@ async def create_job(
         status=JobStatus.QUEUED,
         author=author,
         display_name=display_name,
+        svg_label=svg_label,
         function_name=function_name,
         labels=parsed.labels,
         keypoints=parsed.keypoints,
