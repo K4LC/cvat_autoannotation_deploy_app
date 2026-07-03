@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     # --- ONNX 変換の既定値 (§6 / §10.4) ---
     onnx_opset: int = 12
     image_size: int = 640
+    # end2end NMS を埋め込む。model_handler.py が NMS 適用済み形式を前提とするため True。
+    onnx_nms: bool = True
 
     # --- 推論パラメータ既定値 (テンプレートに埋め込む §6) ---
     conf_threshold: float = 0.25

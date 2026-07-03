@@ -40,6 +40,7 @@ def export_to_onnx(
     *,
     opset: int | None = None,
     imgsz: int | None = None,
+    nms: bool | None = None,
     model_factory: Callable[[str], object] | None = None,
 ) -> Path:
     """`.pt` を ONNX へ変換し `<out_dir>/model.onnx` を生成する。
@@ -49,6 +50,9 @@ def export_to_onnx(
         out_dir: 出力先ディレクトリ（無ければ作成）。
         opset: ONNX opset。未指定なら settings.onnx_opset。
         imgsz: 入力画像サイズ。未指定なら settings.image_size。
+        nms: end2end NMS を埋め込むか。未指定なら settings.onnx_nms。
+            model_handler.py は NMS 適用済みの (1, N, 6+kpt*3) 形式を前提とするため、
+            通常は True にする（False だと生出力 (1, 56, 8400) となり後処理が破綻する）。
         model_factory: YOLO ローダの差し替え（テスト用）。
 
     Returns:
@@ -61,6 +65,7 @@ def export_to_onnx(
     out_dir = Path(out_dir)
     opset = opset if opset is not None else settings.onnx_opset
     imgsz = imgsz if imgsz is not None else settings.image_size
+    nms = nms if nms is not None else settings.onnx_nms
     factory = model_factory or _default_yolo_factory
 
     if not pt_path.exists():
@@ -68,7 +73,7 @@ def export_to_onnx(
 
     try:
         model = factory(str(pt_path))
-        exported = model.export(format="onnx", opset=opset, imgsz=imgsz)
+        exported = model.export(format="onnx", opset=opset, imgsz=imgsz, nms=nms)
     except Exception as exc:  # ultralytics 由来の各種例外をまとめて扱う
         raise OnnxExportError("ONNX変換に失敗しました") from exc
 
