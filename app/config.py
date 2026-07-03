@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     # --- 一時ファイル TTL (秒) (§17.1) ---
     ttl_success: int = 3600                    # 成功: 1 時間
     ttl_failed: int = 1800                     # 失敗: 30 分
+    cleanup_interval: int = 300                # 掃除の実行間隔: 5 分
 
     # --- ONNX 変換の既定値 (§6 / §10.4) ---
     onnx_opset: int = 12

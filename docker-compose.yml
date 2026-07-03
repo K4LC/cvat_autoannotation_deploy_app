@@ -37,5 +37,18 @@ services:
       - redis
     restart: unless-stopped
 
+  cleanup:
+    build: .
+    # 期限切れの一時ファイル/ジョブを定期削除する (§17.1)。
+    command: python -m app.services.cleanup
+    environment:
+      - REDIS_HOST=redis
+      - STORAGE_DIR=/storage
+    volumes:
+      - storage:/storage
+    depends_on:
+      - redis
+    restart: unless-stopped
+
 volumes:
   storage:

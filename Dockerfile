@@ -22,6 +22,8 @@ COPY templates ./templates
 
 # app パッケージを import 可能にする (uvicorn / rq worker 双方で必要)
 ENV PYTHONPATH=/app
+# ログを即時フラッシュ (cleanup 等の常駐ログが docker logs に出るように)
+ENV PYTHONUNBUFFERED=1
 # 共有ストレージのマウント先 (§11.4 / §13)
 ENV STORAGE_DIR=/storage
 
