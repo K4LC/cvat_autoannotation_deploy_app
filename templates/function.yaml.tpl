@@ -1,26 +1,18 @@
 metadata:
-  name: onnx-{{ author }}-{{ modelName }}-{{ timestamp }}-pose-cpu
+  name: onnx-{{ function_name }}-{{ timestamp }}-pose-cpu
   namespace: cvat
   annotations:
-    name: {{ modelName }}
+    name: {{ display_name_json }}
     type: detector
     spec: |
-      [
-        {"name": "person",
-        "type": "skeleton",
-        "svg": "{{ svgInfo }}",
-        "sublabels": [
-          {{ svgLabelNames }}
-        ]
-        }
-      ]
+      {{ spec_json | indent(6) }}
 spec:
-  description: {{ modelName }} created by {{ author }} at {{ timestamp }}
+  description: {{ description_json }}
   runtime: 'python:3.10'
   handler: main:handler
   eventTimeout: 60s
   build:
-    image: cvat.{{ author }}.{{ modelName }}:cpu
+    image: cvat.{{ function_name }}:cpu
     baseImage: ubuntu:22.04
 
     directives:

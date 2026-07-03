@@ -26,7 +26,7 @@ def init_context(context):
 
 
 def handler(context, event):
-    context.logger.info("Run {{ modelName }}-{{ author }}-{{ timestamp }}")
+    context.logger.info("Run {{ function_name }}-{{ author }}-{{ timestamp }}")
     try:
         data = event.body
         buf = io.BytesIO(base64.b64decode(data["image"]))
