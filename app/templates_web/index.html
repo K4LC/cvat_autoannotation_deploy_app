@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CVAT 骨格推定モデル デプロイファイル生成</title>
+</head>
+<body>
+  <!-- T-10 時点の最小フォーム。UI/進捗ポーリングは T-11 で作り込む。 -->
+  <h1>CVAT 骨格推定モデル デプロイファイル生成</h1>
+  <p>作成者名・モデル表示名・SVG・.pt をアップロードすると、CVAT/Nuclio 用の
+     デプロイファイル一式(zip)を生成します。</p>
+
+  <form action="/jobs" method="post" enctype="multipart/form-data">
+    <p><label>作成者名 <input type="text" name="author" required /></label></p>
+    <p><label>モデル表示名 <input type="text" name="display_name" required /></label></p>
+    <p><label>SVGファイル <input type="file" name="svg" accept=".svg" required /></label></p>
+    <p><label>.ptファイル <input type="file" name="pt" accept=".pt" required /></label></p>
+    <p><button type="submit">生成する</button></p>
+  </form>
+</body>
+</html>
