@@ -19,7 +19,11 @@ from __future__ import annotations
 
 import shutil
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+# zip ファイル名等に付与するタイムスタンプは日本標準時 (JST, UTC+9) で統一する。
+# サーバ (Docker) のローカルタイムが UTC でも JST になるよう明示的にタイムゾーンを付ける。
+JST = timezone(timedelta(hours=9))
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -139,7 +143,7 @@ async def create_job(
     _check_extension(pt, ".pt")
 
     # 3) モデル内部名を表示名から算出し、yyyymmddhhmm を付与 (req_add §5)
-    ts = datetime.now().strftime("%Y%m%d%H%M")
+    ts = datetime.now(JST).strftime("%Y%m%d%H%M")
     try:
         function_name = f"{normalize_internal_name(display_name)}-{ts}"
     except InvalidNameError:

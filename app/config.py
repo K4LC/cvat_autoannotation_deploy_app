@@ -8,6 +8,7 @@ Redis 接続情報などをここで一元管理する。
 """
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -55,10 +56,36 @@ class Settings(BaseSettings):
     conf_threshold: float = 0.25
     iou_threshold: float = 0.45
 
+    # --- CVAT serverless 配下への保存 / 自動デプロイ (req_add02 §4/§5/§8) ---
+    # サーバ内かつ Docker コンテナ外のホスト側 CVAT ルート。docker-compose で
+    # host==container の同一パスに bind mount する前提 (§5.2)。
+    # 空文字のときは CVAT 保存 + 自動デプロイをスキップし、zip のみ生成する
+    # (後方互換)。
+    cvat_base_path: str = ""
+    # deploy script 実行のタイムアウト秒 (§9.6)。
+    deploy_timeout_seconds: int = 600
+
     @property
     def redis_url(self) -> str:
         """RQ / redis クライアント用の接続 URL。"""
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    @property
+    def cvat_serverless_dir(self) -> Path:
+        """CVAT の serverless ディレクトリ (§5.1)。deploy script の cwd。"""
+        return Path(self.cvat_base_path) / "cvat" / "serverless"
+
+    @property
+    def cvat_mymodel_dir(self) -> Path:
+        """生成フォルダの保存先 <serverless>/mymodel (§4.1 / §7)。"""
+        return self.cvat_serverless_dir / "mymodel"
+
+    def deploy_script_path(self, target: str) -> Path:
+        """CPU/GPU に応じた deploy script のパス (§8.1)。
+
+        target は "cpu" / "gpu"。<serverless>/deploy_{cpu,gpu}.sh を返す。
+        """
+        return self.cvat_serverless_dir / f"deploy_{target}.sh"
 
 
 @lru_cache

@@ -24,12 +24,15 @@ CPU/GPU 共通（ラベルは実行時に function.yaml の spec から読むた
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from app.services.svg_parser import ParsedSvg
+
+# タイムスタンプは日本標準時 (JST, UTC+9) で統一する。
+JST = timezone(timedelta(hours=9))
 
 # templates/ はプロジェクト直下 (app/services/generator.py から 2 つ上)。
 TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates"
@@ -67,7 +70,7 @@ def build_context(
                    フォームの「SVGラベル名」入力に対応 (req_add §3)。
         display_name: CVAT 検出器の表示名 (annotations.name) と説明文に使う。
     """
-    ts = timestamp or datetime.now().strftime("%Y%m%d%H%M%S")
+    ts = timestamp or datetime.now(JST).strftime("%Y%m%d%H%M%S")
 
     # annotations.spec に入る JSON（skeleton 1 個）。json.dumps が全エスケープを担う。
     # "name" は CVAT 上のラベル名なので SVGラベル名 (svg_label) を使う (req_add §3)。
