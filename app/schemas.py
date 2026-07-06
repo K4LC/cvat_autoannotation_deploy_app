@@ -19,7 +19,11 @@ def _now_iso() -> str:
 
 
 class JobStatus(str, Enum):
-    """ジョブの状態。要件 §F-07 に定義された 9 状態。"""
+    """ジョブの状態。
+
+    §F-07 の 9 状態に加え、req_add02 §12 で CVAT 保存 + 自動デプロイ段階を追加。
+    終端は既存の SUCCESS / FAILED を流用する (§12 の遷移図も success/failed で終わる)。
+    """
 
     QUEUED = "queued"
     RUNNING = "running"
@@ -27,12 +31,21 @@ class JobStatus(str, Enum):
     EXPORTING_ONNX = "exporting_onnx"
     GENERATING_FILES = "generating_files"
     CREATING_ZIP = "creating_zip"
+    SAVING_TO_CVAT = "saving_to_cvat"   # req_add02 §12: mymodel 配下へ保存中
+    DEPLOYING = "deploying"             # req_add02 §12: deploy script 実行中
     SUCCESS = "success"
     FAILED = "failed"
     EXPIRED = "expired"
 
 
-# 状態 -> 画面表示ラベル (§F-07 画面表示例)
+class DeployTarget(str, Enum):
+    """デプロイ対象 (req_add02 §3.2)。CPU / GPU のどちらの deploy script を実行するか。"""
+
+    CPU = "cpu"
+    GPU = "gpu"
+
+
+# 状態 -> 画面表示ラベル (§F-07 画面表示例 / req_add02 §12)
 STATUS_LABELS_JA: dict[JobStatus, str] = {
     JobStatus.QUEUED: "待機中",
     JobStatus.RUNNING: "実行中",
@@ -40,6 +53,8 @@ STATUS_LABELS_JA: dict[JobStatus, str] = {
     JobStatus.EXPORTING_ONNX: "ONNX変換中",
     JobStatus.GENERATING_FILES: "ファイル生成中",
     JobStatus.CREATING_ZIP: "zip作成中",
+    JobStatus.SAVING_TO_CVAT: "CVATへ保存中",
+    JobStatus.DEPLOYING: "デプロイ中",
     JobStatus.SUCCESS: "完了",
     JobStatus.FAILED: "失敗",
     JobStatus.EXPIRED: "期限切れ",
@@ -77,6 +92,18 @@ class JobRecord(BaseModel):
     # 配布制御 (§F-14 / §20.4)
     download_token: str
 
+    # CVAT serverless 配下への保存 + 自動デプロイ (req_add02 §11)
+    deploy_target: DeployTarget = DeployTarget.CPU
+    cvat_base_path: str = ""                    # ジョブ登録時点の設定値を保持
+    deploy_script_path: str | None = None       # 実行する deploy_{cpu,gpu}.sh のパス
+    exported_folder_path: str | None = None     # mymodel 配下の実際の保存先
+    deploy_return_code: int | None = None
+    deploy_stdout_tail: str = ""
+    deploy_stderr_tail: str = ""
+    deploy_stdout_log_path: str | None = None
+    deploy_stderr_log_path: str | None = None
+    deploy_result_path: str | None = None
+
     # エラー情報 (§F-15)
     error: str | None = None
 
@@ -94,7 +121,7 @@ class JobCreateResponse(BaseModel):
 
 
 class JobStatusResponse(BaseModel):
-    """GET /jobs/{job_id} のレスポンス (§19.3 / F-07)。"""
+    """GET /jobs/{job_id} のレスポンス (§19.3 / F-07 / req_add02 §15)。"""
 
     job_id: str
     status: JobStatus
@@ -103,3 +130,11 @@ class JobStatusResponse(BaseModel):
     label_ja: str = ""          # 画面表示用の日本語ラベル
     error: str | None = None
     download_url: str | None = None  # success 時のみ設定 (§F-14)
+
+    # デプロイ結果の画面表示用 (req_add02 §15.3 / §15.4)
+    deploy_target: DeployTarget | None = None
+    exported_folder_path: str | None = None
+    deploy_script_path: str | None = None
+    deploy_return_code: int | None = None
+    deploy_stdout_tail: str = ""
+    deploy_stderr_tail: str = ""
