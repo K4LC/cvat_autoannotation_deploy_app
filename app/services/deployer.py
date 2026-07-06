@@ -99,13 +99,21 @@ def _reserve_unique_dir(mymodel_dir: Path, name: str) -> Path:
     raise DeployError(f"保存先フォルダ名の重複が多すぎます: {name}")
 
 
-def save_to_cvat(output_dir: str | Path, function_name: str, mymodel_dir: str | Path) -> Path:
-    """生成済み 5 ファイルを CVAT の mymodel 配下へコピーする (§7)。
+def save_to_cvat(
+    output_dir: str | Path,
+    function_name: str,
+    mymodel_dir: str | Path,
+    *,
+    files: tuple[str, ...] | None = None,
+) -> Path:
+    """生成済みファイルを CVAT の mymodel 配下へコピーする (§7)。
 
     Args:
-        output_dir: 5 ファイルが入った生成フォルダ (…/output/<function_name>)。
+        output_dir: 対象ファイルが入った生成フォルダ (…/output/<function_name>)。
         function_name: 保存先フォルダ名 (= モデル内部名)。
         mymodel_dir: <CVAT_BASE_PATH>/cvat/serverless/mymodel。
+        files: 同梱する固定ファイル名。未指定なら YOLO 用 (EXPECTED_FILES)。
+            DLC 等は packager.expected_files(model_type) を渡す。
 
     Returns:
         実際に保存したフォルダの Path (衝突時は連番付き)。
@@ -115,8 +123,9 @@ def save_to_cvat(output_dir: str | Path, function_name: str, mymodel_dir: str | 
     """
     output_dir = Path(output_dir)
     mymodel_dir = Path(mymodel_dir)
+    target_files = files if files is not None else EXPECTED_FILES
 
-    missing = [name for name in EXPECTED_FILES if not (output_dir / name).is_file()]
+    missing = [name for name in target_files if not (output_dir / name).is_file()]
     if missing:
         raise DeployError(
             f"CVAT保存に必要なファイルが不足しています: {', '.join(missing)}"
@@ -126,8 +135,8 @@ def save_to_cvat(output_dir: str | Path, function_name: str, mymodel_dir: str | 
     mymodel_dir.mkdir(parents=True, exist_ok=True)
 
     dest = _reserve_unique_dir(mymodel_dir, function_name)
-    # SVG / .pt / zip は含めない (§6)。EXPECTED_FILES の 5 ファイルのみ。
-    for name in EXPECTED_FILES:
+    # SVG / 元の .pt / zip は対象外。指定ファイルのみをコピーする (§6)。
+    for name in target_files:
         shutil.copy2(output_dir / name, dest / name)
     return dest
 
