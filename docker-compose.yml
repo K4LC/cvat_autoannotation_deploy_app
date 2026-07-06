@@ -5,15 +5,23 @@
 # <server-ip> はアプリを動かす実機の IP。ハードコードせず 0.0.0.0 で待受するため、
 # クローンした PC の IP でそのままアクセスできる（IP 設定は不要）。
 #
-# req_add02: CVAT の serverless 配下への保存 + 自動デプロイを行うため、ホスト側 CVAT
-# ルート (CVAT_BASE_PATH) を web / worker に host==container の同一パスで bind mount する
-# (§5.2)。deploy script は worker が subprocess 実行する (§8.4 / §14.3)。
+# req_add02 (WSL 構成): CVAT の serverless 配下へ生成フォルダを保存するため、ホスト側
+# CVAT ルート (CVAT_BASE_PATH) を web / worker に host==container の同一パスで bind mount
+# する (§5.2)。compose は WSL(Ubuntu) シェルから実行すること (Docker Desktop WSL 統合)。
 # CVAT_BASE_PATH が未設定 (空) の場合は CVAT 保存 + 自動デプロイをスキップし zip のみ
 # 生成するため、bind mount にはプレースホルダの既定値を用いて compose が壊れないようにする。
+#
+# deploy script (deploy_{cpu,gpu}.sh) は docker/nuctl を必要とするため、worker コンテナ
+# 内では実行しない。worker は生成〜mymodel 保存までを行い deploy を "deploy" キューへ
+# 委譲する。deploy キューは WSL ホスト上の deploy ワーカー (rq worker deploy) が処理する。
+# そのためホストからも Redis に接続できるよう redis のポートを公開する。
 
 services:
   redis:
     image: redis:7-alpine
+    ports:
+      # WSL ホスト上の deploy ワーカー (rq worker deploy) が接続するため公開。
+      - "6379:6379"
     restart: unless-stopped
 
   web:
@@ -39,9 +47,10 @@ services:
 
   worker:
     build: .
-    # 重い処理 (ONNX変換/生成/zip) と CVAT 保存 + deploy script 実行を担当 (§8.4)。
+    # 重い処理 (ONNX変換/生成/zip) と CVAT の mymodel 配下への保存を担当 (§8.4)。
+    # deploy script 自体は実行しない (docker/nuctl が無いため)。保存後は "deploy" キューへ
+    # 委譲し、WSL ホスト上の deploy ワーカーが sh を実行する。
     # キュー名は settings.rq_queue_name と一致 (§16.4)。
-    # worker は 1 プロセスのため deploy は直列化される (§14.4 同時デプロイ制御の MVP 方針)。
     command: rq worker jobs --url redis://redis:6379/0
     environment:
       - REDIS_HOST=redis
@@ -50,11 +59,8 @@ services:
       - DEPLOY_TIMEOUT_SECONDS=${DEPLOY_TIMEOUT_SECONDS:-600}
     volumes:
       - storage:/storage
-      # ホスト側 CVAT リポジトリ (deploy script の実行対象)。未設定時はプレースホルダ。
+      # ホスト側 CVAT リポジトリ (mymodel への書き込み先)。未設定時はプレースホルダ。
       - ${CVAT_BASE_PATH:-/tmp/cvat_placeholder}:${CVAT_BASE_PATH:-/tmp/cvat_placeholder}
-      # deploy script が Docker/Nuclio を操作するためホストの Docker ソケットを渡す (§5.3)。
-      # 強い権限を持つため、ローカルネットワーク内の信頼できる環境でのみ使用する。
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - redis
     restart: unless-stopped

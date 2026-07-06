@@ -8,11 +8,12 @@ RQ の worker が実行する重い処理 (§11.2 / §16.1)。ジョブの状態
     generating_files -> function.yaml / main.py / model_handler.py 生成 (generator)
     creating_zip     -> cvat-yolo-<internal>.zip 作成 (packager, 併用のため維持)
     saving_to_cvat   -> serverless/mymodel 配下へ保存 (deployer, CVAT_BASE_PATH 設定時)
-    deploying        -> deploy_{cpu,gpu}.sh 実行 (deployer, req_add02 §8)
-    success          -> 完了
+    deploying        -> deploy キューへ委譲 (WSL ホストの deploy ワーカーが sh 実行 §8)
+    success          -> 完了 (deploy ワーカーが最終判定)
 
 いずれかの段階で失敗したら failed に更新し、エラーメッセージを保存する (F-15)。
-deploy の終了コード != 0 も failed とし、ログ tail 等を保存する (§9.3/§9.4)。
+deploy script の実行は docker/nuctl を要するため WSL ホスト側の deploy ワーカー
+(app/jobs/deploy_tasks.py) が担当し、成否 (§9.2/§9.3) を Redis に書き戻す。
 CVAT_BASE_PATH 未設定時は saving_to_cvat 以降をスキップし zip のみで完了する。
 
 一時ディレクトリ構成 (§13 / req_add02 §9.5):
@@ -31,15 +32,10 @@ from pathlib import Path
 from typing import Callable
 
 from app.config import settings
-from app.jobs.queue import get_redis_connection
+from app.jobs.queue import get_queue, get_redis_connection
 from app.jobs.store import JobStore
 from app.schemas import JobStatus
-from app.services.deployer import (
-    DeployError,
-    result_to_fields,
-    run_deploy,
-    save_to_cvat,
-)
+from app.services.deployer import DeployError, save_to_cvat
 from app.services.generator import build_context, render_all
 from app.services.onnx_export import OnnxExportError, export_to_onnx
 from app.services.packager import PackagingError, build_zip, zip_filename
@@ -56,26 +52,24 @@ def process_job(
     *,
     connection=None,
     onnx_model_factory: Callable[[str], object] | None = None,
-    deploy_runner: Callable[..., object] | None = None,
 ) -> str:
     """1 ジョブを処理する。
 
     生成 (SVG解析→ONNX変換→ファイル生成→zip) の後、`CVAT_BASE_PATH` が設定されて
-    いれば CVAT の serverless/mymodel 配下へ保存し、deploy script を実行する
-    (req_add02 §7〜§9)。未設定なら zip のみ生成して完了する（後方互換）。
+    いれば CVAT の serverless/mymodel 配下へ保存し、deploy を `deploy` キューへ委譲
+    する (req_add02 §7〜§9)。未設定なら zip のみ生成して完了する（後方互換）。
+    実際の deploy script 実行は WSL ホスト側の deploy ワーカーが行う。
 
     Args:
         job_id: 対象ジョブ ID。
         connection: redis 接続（省略時は settings から生成）。
         onnx_model_factory: ONNX 変換の YOLO ローダ差し替え（テスト用）。
-        deploy_runner: deploy script 実行の subprocess ランナー差し替え（テスト用）。
 
     Returns:
         保存先フォルダ（デプロイ時）または zip のパス文字列。
 
     Raises:
         処理失敗時は例外を送出する（送出前に status=failed を保存済み）。
-        ただしデプロイの終了コード != 0 は例外でなく status=failed で表現し正常 return する。
     """
     conn = connection or get_redis_connection()
     store = JobStore(conn)
@@ -138,50 +132,23 @@ def process_job(
             output_dir, record.function_name, settings.cvat_mymodel_dir
         )
 
-        # 6) deploy script 実行 (req_add02 §8)
+        # 6) deploy は docker/nuctl を要するため、WSL ホスト側の deploy ワーカーへ委譲する
+        #    (別キュー: settings.deploy_queue_name)。ここでは enqueue して待機状態にするだけ
+        #    (req_add02 §8 / deploy 分離)。
         store.set_status(
             job_id,
             JobStatus.DEPLOYING,
             progress=95,
-            message="デプロイ中",
+            message="デプロイ待機中",
             exported_folder_path=str(exported),
         )
-        result = run_deploy(
-            target=record.deploy_target.value,
-            exported_folder=exported,
-            serverless_dir=settings.cvat_serverless_dir,
-            log_dir=base / "logs",
-            timeout=settings.deploy_timeout_seconds,
-            **({"runner": deploy_runner} if deploy_runner is not None else {}),
-        )
-        deploy_fields = result_to_fields(result)
-
-        # 7) 成否判定 (§9.2 / §9.3): 終了コード 0 で成功、それ以外は failed。
-        if result.return_code == 0:
-            store.set_status(
-                job_id,
-                JobStatus.SUCCESS,
-                progress=100,
-                message="生成とデプロイが完了しました",
-                **deploy_fields,
-            )
-        else:
-            store.set_status(
-                job_id,
-                JobStatus.FAILED,
-                message="デプロイに失敗しました。deploy scriptのログを確認してください",
-                error=f"deploy script が終了コード {result.return_code} で失敗しました",
-                **deploy_fields,
-            )
+        deploy_queue = get_queue(connection=conn, name=settings.deploy_queue_name)
+        deploy_queue.enqueue("app.jobs.deploy_tasks.run_deploy_job", job_id)
         return str(exported)
 
     except DeployError as exc:
-        # CVAT 保存 / deploy 実行の既知失敗 (script不在・権限・タイムアウト等 §9.6/§9.7)。
-        # 可能なら得られたログ情報も保存する。
-        fields = result_to_fields(exc.result) if exc.result is not None else {}
-        store.set_status(
-            job_id, JobStatus.FAILED, message=str(exc), error=str(exc), **fields
-        )
+        # CVAT 保存の既知失敗 (必須ファイル不足など)。deploy 実行自体は別ワーカーが担う。
+        store.set_status(job_id, JobStatus.FAILED, message=str(exc), error=str(exc))
         raise
     except (SvgParseError, OnnxExportError, PackagingError) as exc:
         # ユーザー向けメッセージが明確な既知の失敗

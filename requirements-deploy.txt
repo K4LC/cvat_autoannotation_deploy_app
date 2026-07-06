@@ -1,0 +1,15 @@
+# WSL ホスト上の deploy ワーカー (rq worker deploy) 用の軽量依存 (req_add02 / deploy 分離)。
+# deploy script (deploy_{cpu,gpu}.sh) の実行は WSL ホストの docker/nuctl を使うため、
+# ここには torch / ultralytics / jinja2 / fastapi は不要。
+#
+# 使い方 (WSL Ubuntu シェル):
+#   cd <このリポジトリ>
+#   python3 -m venv .deployvenv && . .deployvenv/bin/activate
+#   pip install -r requirements-deploy.txt
+#   export REDIS_HOST=localhost CVAT_BASE_PATH=/home/isiku/Nas STORAGE_DIR=$PWD/hoststorage PYTHONPATH=$PWD
+#   rq worker deploy --url redis://localhost:6379/0
+
+redis>=5.2,<6.0
+rq>=2.0,<3.0
+pydantic>=2.8,<3.0
+pydantic-settings>=2.6,<3.0

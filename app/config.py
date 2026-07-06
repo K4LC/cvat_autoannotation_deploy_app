@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     cvat_base_path: str = ""
     # deploy script 実行のタイムアウト秒 (§9.6)。
     deploy_timeout_seconds: int = 600
+    # deploy 専用 RQ キュー名。deploy script は docker/nuctl を必要とするため、
+    # このキューは WSL ホスト側の deploy ワーカーが処理する (別ワーカー分離)。
+    deploy_queue_name: str = "deploy"
 
     @property
     def redis_url(self) -> str:

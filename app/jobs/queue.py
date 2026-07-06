@@ -18,11 +18,12 @@ def get_redis_connection() -> redis.Redis:
     return redis.Redis.from_url(settings.redis_url)
 
 
-def get_queue(connection: redis.Redis | None = None) -> Queue:
-    """ジョブ投入用の RQ キューを返す。
+def get_queue(connection: redis.Redis | None = None, name: str | None = None) -> Queue:
+    """RQ キューを返す。
 
     connection を渡さなければ settings から生成する。テストでは fakeredis 等の
-    互換コネクションを渡せる。
+    互換コネクションを渡せる。name を省略すると通常ジョブ用の
+    `settings.rq_queue_name`、deploy 用は `settings.deploy_queue_name` を渡す。
     """
     conn = connection or get_redis_connection()
-    return Queue(settings.rq_queue_name, connection=conn)
+    return Queue(name or settings.rq_queue_name, connection=conn)
