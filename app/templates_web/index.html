@@ -7,16 +7,27 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+  <!-- 全画面ドラッグ&ドロップ用オーバーレイ (req_add02 §2.3) -->
+  <div id="drop-overlay" hidden>
+    <div class="drop-overlay-inner">
+      <p class="drop-overlay-text">ここに SVG ファイルまたは .pt ファイルをドロップ</p>
+    </div>
+  </div>
+
   <main class="container">
     <h1>CVAT 骨格推定モデル デプロイファイル生成</h1>
     <p class="desc">
-      作成者名・モデル表示名・SVGラベル名・SVG・YOLO の <code>.pt</code> をアップロードすると、
-      CVAT/Nuclio 用のデプロイファイル一式（<code>function.yaml</code>(CPU用) /
-      <code>function-gpu.yaml</code>(GPU用) / <code>main.py</code> / <code>model.onnx</code> /
-      <code>model_handler.py</code>）を生成し、zip でダウンロードできます。
+      作成者名・モデル表示名・SVGラベル名・デプロイ対象を入力し、SVG と YOLO の
+      <code>.pt</code> を指定すると、CVAT/Nuclio 用のデプロイファイル一式
+      （<code>function.yaml</code>(CPU用) / <code>function-gpu.yaml</code>(GPU用) /
+      <code>main.py</code> / <code>model.onnx</code> / <code>model_handler.py</code>）を生成します。
+      サーバに CVAT が設定されている場合は、生成フォルダを CVAT の
+      <code>serverless/mymodel/</code> 配下へ保存し、選択したデプロイ対象に応じて
+      自動デプロイを実行します。
     </p>
+    <p class="desc hint">ファイルは画面のどこにでもドラッグ&ドロップできます。</p>
 
-    <!-- 入力フォーム (§18.2) -->
+    <!-- 入力フォーム (§18.2 / req_add02 §3) -->
     <section id="form-section">
       <form id="job-form">
         <div class="field">
@@ -32,14 +43,28 @@
           <input type="text" id="svg_label" name="svg_label" required />
           <small class="hint">CVAT 上に表示される骨格オブジェクトのラベル名（例: person）</small>
         </div>
+
+        <!-- デプロイ対象 (req_add02 §3.2) -->
+        <div class="field">
+          <label>デプロイ対象</label>
+          <div class="radio-group">
+            <label class="radio"><input type="radio" name="deploy_target" value="cpu" checked /> CPU</label>
+            <label class="radio"><input type="radio" name="deploy_target" value="gpu" /> GPU</label>
+          </div>
+        </div>
+
         <div class="field">
           <label for="svg">SVGファイル</label>
           <input type="file" id="svg" name="svg" accept=".svg" required />
+          <small class="filename" id="svg-filename" hidden></small>
         </div>
         <div class="field">
           <label for="pt">.ptファイル</label>
           <input type="file" id="pt" name="pt" accept=".pt" required />
+          <small class="filename" id="pt-filename" hidden></small>
         </div>
+
+        <p id="drop-notice" class="notice" hidden></p>
         <button type="submit" id="submit-btn">生成する</button>
       </form>
       <p id="form-error" class="error" hidden></p>
@@ -57,11 +82,42 @@
       <div class="progress-bar"><div id="progress-fill"></div></div>
       <p id="progress-message" class="message"></p>
 
-      <!-- 完了画面 (§18.4) -->
+      <!-- 完了画面 (§18.4 / req_add02 §15.3) -->
       <div id="result-success" hidden>
-        <a id="download-link" class="btn download" download>zip をダウンロード</a>
+        <p class="success-msg">生成が完了しました。</p>
+        <!-- CVAT 保存 + 自動デプロイ運用時のみ表示 -->
+        <div id="deploy-info" hidden>
+          <dl class="meta">
+            <dt>保存先</dt><dd id="exported-path"></dd>
+            <dt>実行スクリプト</dt><dd id="deploy-script"></dd>
+          </dl>
+          <details class="log-block">
+            <summary>デプロイログ</summary>
+            <div class="log-label">標準出力</div>
+            <pre id="deploy-stdout" class="log"></pre>
+            <div class="log-label">標準エラー</div>
+            <pre id="deploy-stderr" class="log"></pre>
+          </details>
+        </div>
+        <!-- zip 併用: download_url がある場合のみ表示 -->
+        <a id="download-link" class="btn download" download hidden>zip をダウンロード</a>
       </div>
-      <p id="result-error" class="error" hidden></p>
+
+      <!-- 失敗画面 (§18.4 / req_add02 §15.4) -->
+      <div id="result-error" class="error" hidden>
+        <p id="result-error-message"></p>
+        <dl class="meta" id="deploy-error-meta" hidden>
+          <dt>実行スクリプト</dt><dd id="err-deploy-script"></dd>
+          <dt>終了コード</dt><dd id="err-return-code"></dd>
+          <dt>保存先</dt><dd id="err-exported-path"></dd>
+        </dl>
+        <div id="err-log-block" hidden>
+          <div class="log-label">標準出力（末尾）</div>
+          <pre id="err-deploy-stdout" class="log"></pre>
+          <div class="log-label">標準エラー（末尾）</div>
+          <pre id="err-deploy-stderr" class="log"></pre>
+        </div>
+      </div>
 
       <button id="restart-btn" class="btn secondary" hidden>最初からやり直す</button>
     </section>

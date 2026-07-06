@@ -1,6 +1,7 @@
-// フロントエンド制御 (T-11)
+// フロントエンド制御 (T-11 / req_add02 §2・§15)
 // フォーム送信 -> POST /jobs -> GET /jobs/{id} をポーリング -> 進捗表示 ->
-// 完了でダウンロードボタン / 失敗でエラー表示 (§F-07 / §18)。
+// 完了でデプロイ結果/ダウンロード / 失敗でエラー・ログ表示 (§F-07 / §18)。
+// 加えて、画面全体へのドラッグ&ドロップでファイルを投入できる (req_add02 §2)。
 
 "use strict";
 
@@ -12,8 +13,16 @@ const progressSection = document.getElementById("progress-section");
 const formError = document.getElementById("form-error");
 const submitBtn = document.getElementById("submit-btn");
 
+const svgInput = document.getElementById("svg");
+const ptInput = document.getElementById("pt");
+const svgFilename = document.getElementById("svg-filename");
+const ptFilename = document.getElementById("pt-filename");
+const dropOverlay = document.getElementById("drop-overlay");
+const dropNotice = document.getElementById("drop-notice");
+
 let pollTimer = null;
 
+// ------------------------------------------------------------------ フォーム送信
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   formError.hidden = true;
@@ -43,6 +52,129 @@ function showFormError(message) {
   submitBtn.disabled = false;
 }
 
+// ------------------------------------------------------- ファイル選択 / D&D 共通
+// 拡張子から入力欄を判定する (req_add02 §2.4)。対応外は null。
+function inputForFile(file) {
+  const name = (file.name || "").toLowerCase();
+  if (name.endsWith(".svg")) return svgInput;
+  if (name.endsWith(".pt")) return ptInput;
+  return null;
+}
+
+// DataTransfer を使って file input に File をセットする (§2.4 / §3.4)。
+function assignFile(input, file) {
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+  updateFilenameDisplay();
+}
+
+// 選択中ファイル名を表示する (§3.5)。
+function updateFilenameDisplay() {
+  renderFilename(svgInput, svgFilename, "SVGファイル");
+  renderFilename(ptInput, ptFilename, "PTファイル");
+}
+
+function renderFilename(input, el, label) {
+  if (input.files && input.files.length > 0) {
+    el.textContent = label + ": " + input.files[0].name;
+    el.hidden = false;
+  } else {
+    el.hidden = true;
+  }
+}
+
+// 複数ファイルを種別ごとに振り分ける (§2.5 / §2.6 / §2.7)。
+function handleDroppedFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (files.length === 0) return;
+
+  const byType = { svg: [], pt: [], invalid: [] };
+  for (const file of files) {
+    const input = inputForFile(file);
+    if (input === svgInput) byType.svg.push(file);
+    else if (input === ptInput) byType.pt.push(file);
+    else byType.invalid.push(file);
+  }
+
+  const notices = [];
+  // 同種が複数なら最後を採用し警告 (§2.7)
+  if (byType.svg.length > 0) {
+    assignFile(svgInput, byType.svg[byType.svg.length - 1]);
+    if (byType.svg.length > 1) notices.push("複数のSVGファイルが指定されたため、最後のファイルを使用します。");
+  }
+  if (byType.pt.length > 0) {
+    assignFile(ptInput, byType.pt[byType.pt.length - 1]);
+    if (byType.pt.length > 1) notices.push("複数の.ptファイルが指定されたため、最後のファイルを使用します。");
+  }
+
+  if (byType.invalid.length > 0) {
+    // 対応外は反映せずエラー表示 (§2.6)
+    showFormError("対応していないファイル形式です。SVGファイルまたは.ptファイルを指定してください。");
+  } else {
+    formError.hidden = true;
+  }
+
+  if (notices.length > 0) {
+    dropNotice.textContent = notices.join(" ");
+    dropNotice.hidden = false;
+  } else {
+    dropNotice.hidden = true;
+  }
+}
+
+// ファイル選択ボタンからの選択でもファイル名を表示 (§3.5)
+svgInput.addEventListener("change", updateFilenameDisplay);
+ptInput.addEventListener("change", updateFilenameDisplay);
+
+// -------------------------------------------------------- 全画面ドラッグ&ドロップ
+// dragenter/dragleave はネスト要素間でも発火するため、カウンタで画面外離脱を判定する。
+let dragDepth = 0;
+
+function showOverlay() {
+  dropOverlay.hidden = false;
+}
+function hideOverlay() {
+  dropOverlay.hidden = true;
+}
+
+window.addEventListener("dragenter", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  showOverlay();
+});
+
+window.addEventListener("dragover", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); // これがないと drop が発火しない
+  showOverlay();
+});
+
+window.addEventListener("dragleave", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) hideOverlay();
+});
+
+window.addEventListener("drop", (e) => {
+  e.preventDefault(); // ブラウザがファイルを開くのを防ぐ
+  dragDepth = 0;
+  hideOverlay();
+  if (e.dataTransfer && e.dataTransfer.files) {
+    handleDroppedFiles(e.dataTransfer.files);
+  }
+});
+
+// ドラッグ中の内容がファイルかどうか (テキスト選択のドラッグ等を無視)。
+function hasFiles(e) {
+  const dt = e.dataTransfer;
+  if (!dt) return false;
+  return Array.from(dt.types || []).includes("Files");
+}
+
+// ----------------------------------------------------------------- 進捗ポーリング
 function startProgress(jobId, displayName, statusUrl) {
   formSection.hidden = true;
   progressSection.hidden = false;
@@ -88,28 +220,81 @@ function stopPolling() {
   }
 }
 
+// ----------------------------------------------------------------- 完了 / 失敗
 function finishSuccess(state) {
   stopPolling();
+
+  // CVAT 保存 + 自動デプロイ運用時はデプロイ結果を表示 (§15.3)
+  if (state.exported_folder_path) {
+    setText("exported-path", state.exported_folder_path);
+    setText("deploy-script", scriptLabel(state));
+    setText("deploy-stdout", state.deploy_stdout_tail || "（出力なし）");
+    setText("deploy-stderr", state.deploy_stderr_tail || "（出力なし）");
+    document.getElementById("deploy-info").hidden = false;
+  }
+
+  // zip 併用: download_url があるときだけダウンロードボタンを出す
   const link = document.getElementById("download-link");
-  link.href = state.download_url;
+  if (state.download_url) {
+    link.href = state.download_url;
+    link.hidden = false;
+  } else {
+    link.hidden = true;
+  }
+
   document.getElementById("result-success").hidden = false;
   showRestart();
 }
 
 function finishError(state) {
   stopPolling();
-  const box = document.getElementById("result-error");
-  box.textContent = "エラー: " + (state.error || state.message || "生成に失敗しました");
-  box.hidden = false;
+  setText(
+    "result-error-message",
+    "エラー: " + (state.error || state.message || "生成に失敗しました")
+  );
+
+  // デプロイ失敗時は詳細も表示 (§15.4 / §9.4)
+  const hasDeployInfo =
+    state.exported_folder_path ||
+    state.deploy_script_path ||
+    state.deploy_return_code !== null;
+  if (hasDeployInfo) {
+    setText("err-deploy-script", scriptLabel(state));
+    setText(
+      "err-return-code",
+      state.deploy_return_code === null || state.deploy_return_code === undefined
+        ? "（なし）"
+        : String(state.deploy_return_code)
+    );
+    setText("err-exported-path", state.exported_folder_path || "（保存前に失敗）");
+    document.getElementById("deploy-error-meta").hidden = false;
+
+    setText("err-deploy-stdout", state.deploy_stdout_tail || "（出力なし）");
+    setText("err-deploy-stderr", state.deploy_stderr_tail || "（出力なし）");
+    document.getElementById("err-log-block").hidden = false;
+  }
+
+  document.getElementById("result-error").hidden = false;
   showRestart();
 }
 
 function finishExpired() {
   stopPolling();
-  const box = document.getElementById("result-error");
-  box.textContent = "このジョブは期限切れです。最初からやり直してください。";
-  box.hidden = false;
+  setText("result-error-message", "このジョブは期限切れです。最初からやり直してください。");
+  document.getElementById("result-error").hidden = false;
   showRestart();
+}
+
+// deploy script のファイル名（パスの末尾）+ 対象を表示用に整形。
+function scriptLabel(state) {
+  const path = state.deploy_script_path || "";
+  const base = path.split(/[\\/]/).pop();
+  const target = state.deploy_target ? " (" + state.deploy_target.toUpperCase() + ")" : "";
+  return base ? base + target : "-";
+}
+
+function setText(id, text) {
+  document.getElementById(id).textContent = text;
 }
 
 function showRestart() {
