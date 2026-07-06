@@ -139,7 +139,7 @@ def process_job(
             job_id,
             JobStatus.DEPLOYING,
             progress=95,
-            message="デプロイ待機中",
+            message="デプロイ待機中（deployワーカーの起動が必要です）",
             exported_folder_path=str(exported),
         )
         deploy_queue = get_queue(connection=conn, name=settings.deploy_queue_name)

@@ -15,11 +15,32 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+from rq import get_current_job
+
 from app.config import settings
 from app.jobs.queue import get_redis_connection
 from app.jobs.store import JobStore
 from app.schemas import JobStatus
 from app.services.deployer import DeployError, result_to_fields, run_deploy
+
+
+def _resolve_connection(connection):
+    """使用する Redis 接続を決める。
+
+    明示指定があればそれを使う（テスト経路）。無ければ RQ の現在実行ジョブの接続
+    （`rq worker deploy --url ...` で確立したもの）を優先的に流用し、取れなければ
+    settings から生成する。ホストで REDIS_HOST を設定し忘れても RQ の接続で動くよう
+    にするためのフォールバック。
+    """
+    if connection is not None:
+        return connection
+    try:
+        job = get_current_job()
+        if job is not None and job.connection is not None:
+            return job.connection
+    except Exception:
+        pass
+    return get_redis_connection()
 
 
 def run_deploy_job(
@@ -46,7 +67,7 @@ def run_deploy_job(
         DeployError: script 実行に失敗した場合（送出前に status=failed を保存済み）。
         ValueError: ジョブが見つからない / 保存先が未設定の場合。
     """
-    conn = connection or get_redis_connection()
+    conn = _resolve_connection(connection)
     store = JobStore(conn)
 
     record = store.get(job_id)

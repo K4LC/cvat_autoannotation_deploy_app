@@ -139,3 +139,22 @@ def test_run_deploy_job_missing_exported_path(env):
     job_id = _seed(conn, exported=None)  # 保存先未設定
     with pytest.raises(ValueError):
         dt.run_deploy_job(job_id, connection=conn, runner=_runner(0))
+
+
+def test_run_deploy_job_uses_rq_job_connection_when_unset(env, monkeypatch):
+    """connection 未指定時は RQ 現在ジョブの接続を流用する（REDIS_HOST 未設定でも動く）。"""
+    conn = FakeConn()
+    job_id = _seed(conn, exported=env.exported)
+
+    # RQ の現在ジョブが FakeConn を持っているとみなす
+    monkeypatch.setattr(dt, "get_current_job", lambda: SimpleNamespace(connection=conn))
+    # get_redis_connection が呼ばれたら失敗させ、フォールバック経由でないことを保証
+    monkeypatch.setattr(
+        dt, "get_redis_connection", lambda: (_ for _ in ()).throw(AssertionError("should not be called"))
+    )
+
+    dt.run_deploy_job(job_id, runner=_runner(0, stdout="ok"))  # connection 未指定
+
+    rec = JobStore(conn).get(job_id)
+    assert rec.status == JobStatus.SUCCESS
+    assert rec.deploy_return_code == 0
