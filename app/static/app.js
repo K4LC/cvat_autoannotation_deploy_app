@@ -20,7 +20,37 @@ const ptFilename = document.getElementById("pt-filename");
 const dropOverlay = document.getElementById("drop-overlay");
 const dropNotice = document.getElementById("drop-notice");
 
+// DLC 関連 (モデル種別で表示切替)
+const dlcConfigInput = document.getElementById("dlc_config");
+const dlcConfigField = document.getElementById("dlc-config-field");
+const dlcConfigFilename = document.getElementById("dlc-config-filename");
+const dlcHint = document.getElementById("dlc-hint");
+
 let pollTimer = null;
+
+// 選択中のモデル種別が DLC か。
+function isDlcSelected() {
+  const el = document.querySelector('input[name="model_type"]:checked');
+  return el && el.value === "dlc";
+}
+
+// モデル種別の切替で DLC 設定欄の表示/必須を更新する。
+function updateModelTypeUI() {
+  const dlc = isDlcSelected();
+  dlcConfigField.hidden = !dlc;
+  dlcHint.hidden = !dlc;
+  dlcConfigInput.required = dlc;
+  if (!dlc) {
+    // YOLO に戻したら DLC 設定はクリア
+    dlcConfigInput.value = "";
+    dlcConfigFilename.hidden = true;
+  }
+}
+
+document.querySelectorAll('input[name="model_type"]').forEach((el) => {
+  el.addEventListener("change", updateModelTypeUI);
+});
+updateModelTypeUI();
 
 // ------------------------------------------------------------------ フォーム送信
 form.addEventListener("submit", async (event) => {
@@ -54,10 +84,12 @@ function showFormError(message) {
 
 // ------------------------------------------------------- ファイル選択 / D&D 共通
 // 拡張子から入力欄を判定する (req_add02 §2.4)。対応外は null。
+// .yaml/.yml は DLC 選択時のみ DLC 設定欄に割り当てる。
 function inputForFile(file) {
   const name = (file.name || "").toLowerCase();
   if (name.endsWith(".svg")) return svgInput;
   if (name.endsWith(".pt")) return ptInput;
+  if ((name.endsWith(".yaml") || name.endsWith(".yml")) && isDlcSelected()) return dlcConfigInput;
   return null;
 }
 
@@ -73,6 +105,7 @@ function assignFile(input, file) {
 function updateFilenameDisplay() {
   renderFilename(svgInput, svgFilename, "SVGファイル");
   renderFilename(ptInput, ptFilename, "PTファイル");
+  renderFilename(dlcConfigInput, dlcConfigFilename, "DLC設定");
 }
 
 function renderFilename(input, el, label) {
@@ -89,11 +122,12 @@ function handleDroppedFiles(fileList) {
   const files = Array.from(fileList || []);
   if (files.length === 0) return;
 
-  const byType = { svg: [], pt: [], invalid: [] };
+  const byType = { svg: [], pt: [], yaml: [], invalid: [] };
   for (const file of files) {
     const input = inputForFile(file);
     if (input === svgInput) byType.svg.push(file);
     else if (input === ptInput) byType.pt.push(file);
+    else if (input === dlcConfigInput) byType.yaml.push(file);
     else byType.invalid.push(file);
   }
 
@@ -107,10 +141,17 @@ function handleDroppedFiles(fileList) {
     assignFile(ptInput, byType.pt[byType.pt.length - 1]);
     if (byType.pt.length > 1) notices.push("複数の.ptファイルが指定されたため、最後のファイルを使用します。");
   }
+  if (byType.yaml.length > 0) {
+    assignFile(dlcConfigInput, byType.yaml[byType.yaml.length - 1]);
+    if (byType.yaml.length > 1) notices.push("複数の設定ファイルが指定されたため、最後のファイルを使用します。");
+  }
 
   if (byType.invalid.length > 0) {
     // 対応外は反映せずエラー表示 (§2.6)
-    showFormError("対応していないファイル形式です。SVGファイルまたは.ptファイルを指定してください。");
+    const msg = isDlcSelected()
+      ? "対応していないファイル形式です。SVG / .pt / DLC設定(.yaml) を指定してください。"
+      : "対応していないファイル形式です。SVGファイルまたは.ptファイルを指定してください。";
+    showFormError(msg);
   } else {
     formError.hidden = true;
   }
@@ -126,6 +167,7 @@ function handleDroppedFiles(fileList) {
 // ファイル選択ボタンからの選択でもファイル名を表示 (§3.5)
 svgInput.addEventListener("change", updateFilenameDisplay);
 ptInput.addEventListener("change", updateFilenameDisplay);
+dlcConfigInput.addEventListener("change", updateFilenameDisplay);
 
 // -------------------------------------------------------- 全画面ドラッグ&ドロップ
 // dragenter/dragleave はネスト要素間でも発火するため、カウンタで画面外離脱を判定する。

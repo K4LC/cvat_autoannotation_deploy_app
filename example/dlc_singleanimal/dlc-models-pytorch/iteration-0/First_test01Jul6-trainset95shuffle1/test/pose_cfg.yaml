@@ -1,0 +1,17 @@
+dataset: 
+  C:\Users\yamadaLAB-1\Ishikubo\Nas\deeplabcut_ws\First_test01-Ishikubo-2026-07-06
+dataset_type: multi-animal-imgaug
+num_joints: 4
+all_joints:
+- - 0
+- - 1
+- - 2
+- - 3
+all_joints_names:
+- head
+- hip
+- tail
+- ''
+net_type: resnet_50
+global_scale: 1
+scoremap_dir: test

@@ -28,23 +28,52 @@ CVAT_BASE_PATH 未設定時は saving_to_cvat 以降をスキップし zip の�
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Callable
 
 from app.config import settings
 from app.jobs.queue import get_queue, get_redis_connection
 from app.jobs.store import JobStore
-from app.schemas import JobStatus
+from app.schemas import JobStatus, ModelType
 from app.services.deployer import DeployError, save_to_cvat
 from app.services.generator import build_context, render_all
 from app.services.onnx_export import OnnxExportError, export_to_onnx
-from app.services.packager import PackagingError, build_zip, zip_filename
+from app.services.packager import (
+    DLC_CONFIG_NAME,
+    DLC_PT_NAME,
+    PackagingError,
+    build_zip,
+    expected_files,
+    zip_filename,
+)
 from app.services.svg_parser import SvgParseError, parse_svg
 
 
 def job_dir(job_id: str) -> Path:
     """ジョブの一時ディレクトリ (§13)。"""
     return Path(settings.storage_dir) / "jobs" / job_id
+
+
+def _prepare_dlc_model(record, output_dir: Path) -> None:
+    """DLC は ONNX 変換せず、アップロード済み .pt と pytorch_config を同梱する。
+
+    nuclio 関数内で DLC(PyTorch) が直接推論するため、snapshot(.pt) と
+    pytorch_config.yaml を出力フォルダへコピーする（固定名）。
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    pt_src = Path(record.pt_path)
+    if not pt_src.is_file():
+        raise OnnxExportError(f"入力の.ptファイルが見つかりません: {pt_src}")
+    if not record.dlc_config_path or not Path(record.dlc_config_path).is_file():
+        raise OnnxExportError(
+            "DLCモデルには pytorch_config.yaml が必要ですが見つかりません"
+        )
+
+    shutil.copy2(pt_src, output_dir / DLC_PT_NAME)
+    shutil.copy2(Path(record.dlc_config_path), output_dir / DLC_CONFIG_NAME)
 
 
 def process_job(
@@ -89,11 +118,19 @@ def process_job(
         store.set_status(job_id, JobStatus.PARSING_SVG, progress=15, message="SVG解析中")
         parsed = parse_svg(record.svg_path)
 
-        # 2) ONNX 変換
-        store.set_status(job_id, JobStatus.EXPORTING_ONNX, progress=40, message="ONNX変換中")
-        export_to_onnx(record.pt_path, output_dir, model_factory=onnx_model_factory)
+        # 2) モデル準備。YOLO は ONNX 変換、DLC は .pt+config をそのまま同梱する。
+        if record.model_type is ModelType.DLC:
+            store.set_status(
+                job_id, JobStatus.EXPORTING_ONNX, progress=40, message="モデル準備中"
+            )
+            _prepare_dlc_model(record, output_dir)
+        else:
+            store.set_status(
+                job_id, JobStatus.EXPORTING_ONNX, progress=40, message="ONNX変換中"
+            )
+            export_to_onnx(record.pt_path, output_dir, model_factory=onnx_model_factory)
 
-        # 3) テンプレートファイル生成
+        # 3) テンプレートファイル生成 (モデル種別でテンプレート集合を切替)
         store.set_status(job_id, JobStatus.GENERATING_FILES, progress=70, message="ファイル生成中")
         context = build_context(
             author=record.author,
@@ -102,11 +139,13 @@ def process_job(
             svg_label=record.svg_label,
             parsed=parsed,
         )
-        render_all(output_dir, context)
+        render_all(output_dir, context, model_type=record.model_type)
+
+        files = expected_files(record.model_type)
 
         # 4) zip 作成 (併用のため維持 req_add02 §18.6)
         store.set_status(job_id, JobStatus.CREATING_ZIP, progress=85, message="zip作成中")
-        build_zip(output_dir, zip_path, internal_name=record.function_name)
+        build_zip(output_dir, zip_path, internal_name=record.function_name, files=files)
 
         # CVAT_BASE_PATH 未設定なら CVAT 保存 + 自動デプロイをスキップし zip のみで完了
         # (後方互換)。
@@ -129,7 +168,7 @@ def process_job(
             zip_path=str(zip_path),
         )
         exported = save_to_cvat(
-            output_dir, record.function_name, settings.cvat_mymodel_dir
+            output_dir, record.function_name, settings.cvat_mymodel_dir, files=files
         )
 
         # 6) deploy は docker/nuctl を要するため、WSL ホスト側の deploy ワーカーへ委譲する

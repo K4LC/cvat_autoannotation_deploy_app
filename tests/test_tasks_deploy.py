@@ -19,7 +19,7 @@ import pytest
 
 import app.jobs.tasks as tasks
 from app.jobs.store import JobStore
-from app.schemas import DeployTarget, JobRecord, JobStatus
+from app.schemas import DeployTarget, JobRecord, JobStatus, ModelType
 
 FUNC = "human-pose-202607061530"
 
@@ -53,19 +53,26 @@ class FakeQueue:
         self.enqueued.append((func, args, kwargs))
 
 
-def _seed_job(conn, base: Path, *, deploy_target=DeployTarget.CPU) -> str:
+def _seed_job(conn, base: Path, *, deploy_target=DeployTarget.CPU, model_type=ModelType.YOLO_POSE) -> str:
     job_id = "job-1"
     (base / "input").mkdir(parents=True, exist_ok=True)
     (base / "input" / "model.pt").write_text("pt", encoding="utf-8")
     (base / "input" / "model.svg").write_text("<svg/>", encoding="utf-8")
+    dlc_config_path = None
+    if model_type is ModelType.DLC:
+        cfg = base / "input" / "pytorch_config.yaml"
+        cfg.write_text("model: {}\n", encoding="utf-8")
+        dlc_config_path = str(cfg)
     record = JobRecord(
         job_id=job_id,
         author="a",
         display_name="Human Pose",
         svg_label="person",
         function_name=FUNC,
+        model_type=model_type,
         pt_path=str(base / "input" / "model.pt"),
         svg_path=str(base / "input" / "model.svg"),
+        dlc_config_path=dlc_config_path,
         download_token="tok",
         deploy_target=deploy_target,
     )
@@ -132,6 +139,38 @@ def test_saves_and_enqueues_deploy(patched, monkeypatch, tmp_path):
     func, args, _ = patched.queue.enqueued[0]
     assert func == "app.jobs.deploy_tasks.run_deploy_job"
     assert args == (job_id,)
+    assert ret == str(exported)
+
+
+def test_dlc_skips_onnx_and_bundles_pt_config(patched, monkeypatch, tmp_path):
+    serverless = _set_cvat(monkeypatch, tmp_path)
+    conn = FakeConn()
+    job_id = _seed_job(conn, tasks.job_dir("job-1"), model_type=ModelType.DLC)
+
+    # DLC 経路では ONNX 変換を呼ばない
+    def boom(*a, **k):
+        raise AssertionError("export_to_onnx must not be called for DLC")
+
+    monkeypatch.setattr(tasks, "export_to_onnx", boom)
+
+    ret = tasks.process_job(job_id, connection=conn)
+
+    rec = JobStore(conn).get(job_id)
+    assert rec.status == JobStatus.DEPLOYING
+    exported = Path(rec.exported_folder_path)
+    # DLC 同梱物: 4 共通 + model.pt + pytorch_config.yaml
+    assert sorted(p.name for p in exported.iterdir()) == sorted(
+        [
+            "function.yaml",
+            "function-gpu.yaml",
+            "main.py",
+            "model_handler.py",
+            "model.pt",
+            "pytorch_config.yaml",
+        ]
+    )
+    assert (exported / "model.pt").read_text(encoding="utf-8") == "pt"
+    assert len(patched.queue.enqueued) == 1
     assert ret == str(exported)
 
 

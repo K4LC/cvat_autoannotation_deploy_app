@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import app.config as config_mod
 import app.main as main
 from app.jobs.store import JobStore
-from app.schemas import DeployTarget, JobRecord, JobStatus
+from app.schemas import DeployTarget, JobRecord, JobStatus, ModelType
 
 
 class FakeConn:
@@ -108,6 +108,29 @@ def test_create_job_gpu(client):
     res = client.post("/jobs", data=_data(deploy_target="gpu"), files=_files())
     assert res.status_code == 200, res.text
     assert _saved_record(client).deploy_target == DeployTarget.GPU
+
+
+def test_create_job_dlc_requires_config(client):
+    # DLC 選択で pytorch_config.yaml 未添付 -> 400
+    res = client.post("/jobs", data=_data(model_type="dlc"), files=_files())
+    assert res.status_code == 400
+    assert "pytorch_config.yaml" in res.json()["detail"]
+
+
+def test_create_job_dlc_ok(client):
+    files = _files()
+    files["dlc_config"] = ("pytorch_config.yaml", b"model: {}\n", "application/x-yaml")
+    res = client.post("/jobs", data=_data(model_type="dlc"), files=files)
+    assert res.status_code == 200, res.text
+    rec = _saved_record(client)
+    assert rec.model_type == ModelType.DLC
+    assert rec.dlc_config_path is not None and rec.dlc_config_path.endswith("pytorch_config.yaml")
+
+
+def test_create_job_invalid_model_type(client):
+    res = client.post("/jobs", data=_data(model_type="mmpose"), files=_files())
+    assert res.status_code == 400
+    assert "モデル種別" in res.json()["detail"]
 
 
 def test_create_job_invalid_deploy_target(client):
