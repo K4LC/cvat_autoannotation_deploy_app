@@ -45,17 +45,6 @@ class DeployTarget(str, Enum):
     GPU = "gpu"
 
 
-class ModelType(str, Enum):
-    """アップロードするモデルの種別 (DLC 対応)。
-
-    - YOLO_POSE: ultralytics YOLO pose の .pt → ONNX 変換して推論。
-    - DLC: DeepLabCut 3.x (PyTorch) の snapshot .pt。ONNX 変換せず nuclio 内で直接推論。
-    """
-
-    YOLO_POSE = "yolo"
-    DLC = "dlc"
-
-
 # 状態 -> 画面表示ラベル (§F-07 画面表示例 / req_add02 §12)
 STATUS_LABELS_JA: dict[JobStatus, str] = {
     JobStatus.QUEUED: "待機中",
@@ -88,7 +77,6 @@ class JobRecord(BaseModel):
     author: str
     display_name: str
     svg_label: str                           # CVAT ラベル名 (annotations.spec の "name")
-    model_type: ModelType = ModelType.YOLO_POSE  # YOLO pose / DeepLabCut
 
     # SVG から取得 (§7)
     function_name: str                       # 正規化済みモデル内部名 + -yyyymmddhhmm
@@ -99,7 +87,6 @@ class JobRecord(BaseModel):
     # ファイルパス (§13)
     pt_path: str
     svg_path: str
-    dlc_config_path: str | None = None       # DLC の pytorch_config.yaml (DLC 時のみ)
     zip_path: str | None = None
 
     # 配布制御 (§F-14 / §20.4)

@@ -44,18 +44,6 @@
           <small class="hint">CVAT 上に表示される骨格オブジェクトのラベル名（例: person）</small>
         </div>
 
-        <!-- モデル種別 (DLC 対応) -->
-        <div class="field">
-          <label>モデル種別</label>
-          <div class="radio-group">
-            <label class="radio"><input type="radio" name="model_type" value="yolo" checked /> YOLO pose</label>
-            <label class="radio"><input type="radio" name="model_type" value="dlc" /> DeepLabCut</label>
-          </div>
-          <small class="hint" id="dlc-hint" hidden>
-            DeepLabCut(単一動物, PyTorch)。SVGのサブラベルは学習時の bodyparts と同じ順で定義してください。
-          </small>
-        </div>
-
         <!-- デプロイ対象 (req_add02 §3.2) -->
         <div class="field">
           <label>デプロイ対象</label>
@@ -74,12 +62,6 @@
           <label for="pt">.ptファイル</label>
           <input type="file" id="pt" name="pt" accept=".pt" required />
           <small class="filename" id="pt-filename" hidden></small>
-        </div>
-        <!-- DLC 選択時のみ表示: pytorch_config.yaml -->
-        <div class="field" id="dlc-config-field" hidden>
-          <label for="dlc_config">DLC設定ファイル (pytorch_config.yaml)</label>
-          <input type="file" id="dlc_config" name="dlc_config" accept=".yaml,.yml" />
-          <small class="filename" id="dlc-config-filename" hidden></small>
         </div>
 
         <p id="drop-notice" class="notice" hidden></p>

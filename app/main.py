@@ -43,7 +43,6 @@ from app.schemas import (
     JobRecord,
     JobStatus,
     JobStatusResponse,
-    ModelType,
 )
 from app.services.naming import InvalidNameError, normalize_internal_name
 from app.services.packager import zip_filename
@@ -56,7 +55,6 @@ STATIC_DIR = APP_DIR / "static"
 # アップロード保存時の固定ファイル名 (§F-03 / F-04 / §17.3)
 SVG_FILENAME = "model.svg"
 PT_FILENAME = "model.pt"
-DLC_CONFIG_FILENAME = "pytorch_config.yaml"  # DLC の pytorch_config.yaml (DLC 時のみ)
 
 UPLOAD_CHUNK = 1024 * 1024  # 1MB
 
@@ -125,10 +123,8 @@ async def create_job(
     display_name: str = Form(...),
     svg_label: str = Form(...),
     deploy_target: str = Form("cpu"),
-    model_type: str = Form("yolo"),
     svg: UploadFile = File(...),
     pt: UploadFile = File(...),
-    dlc_config: UploadFile | None = File(None),
     store: JobStore = Depends(get_store),
     queue: Queue = Depends(get_job_queue),
 ):
@@ -149,21 +145,6 @@ async def create_job(
     if deploy_target not in (DeployTarget.CPU.value, DeployTarget.GPU.value):
         raise HTTPException(
             status_code=400, detail="デプロイ対象は CPU または GPU を選択してください"
-        )
-
-    # 1.55) モデル種別の検証 (DLC 対応)
-    model_type = (model_type or "").strip().lower()
-    if model_type not in (ModelType.YOLO_POSE.value, ModelType.DLC.value):
-        raise HTTPException(
-            status_code=400,
-            detail="モデル種別は YOLO pose または DeepLabCut を選択してください",
-        )
-    is_dlc = model_type == ModelType.DLC.value
-    # DLC は pytorch_config.yaml のアップロードが必須。
-    if is_dlc and (dlc_config is None or not (dlc_config.filename or "")):
-        raise HTTPException(
-            status_code=400,
-            detail="DeepLabCut では pytorch_config.yaml をアップロードしてください",
         )
 
     # 1.6) CVAT 保存先 / deploy script の事前チェック (req_add02 §13)。
@@ -187,8 +168,6 @@ async def create_job(
     # 2) 拡張子の検証 (§14.3 / §14.4)
     _check_extension(svg, ".svg")
     _check_extension(pt, ".pt")
-    if is_dlc:
-        _check_extension(dlc_config, ".yaml")
 
     # 3) モデル内部名を表示名から算出し、yyyymmddhhmm を付与 (req_add §5)
     ts = datetime.now(JST).strftime("%Y%m%d%H%M")
@@ -205,14 +184,9 @@ async def create_job(
     base = job_dir(job_id)
     svg_path = base / "input" / SVG_FILENAME
     pt_path = base / "input" / PT_FILENAME
-    dlc_config_path: str | None = None
     try:
         await _save_upload(svg, svg_path, settings.max_svg_size)
         await _save_upload(pt, pt_path, settings.max_pt_size)
-        if is_dlc:
-            cfg_path = base / "input" / DLC_CONFIG_FILENAME
-            await _save_upload(dlc_config, cfg_path, settings.max_svg_size)
-            dlc_config_path = str(cfg_path)
 
         # 5) SVG 解析(検証)。失敗ならジョブを作らずエラー (§F-05 / AC-03)
         try:
@@ -230,14 +204,12 @@ async def create_job(
         author=author,
         display_name=display_name,
         svg_label=svg_label,
-        model_type=ModelType(model_type),
         function_name=function_name,
         labels=parsed.labels,
         keypoints=parsed.keypoints,
         skeleton=parsed.skeleton,
         pt_path=str(pt_path),
         svg_path=str(svg_path),
-        dlc_config_path=dlc_config_path,
         download_token=JobStore.generate_token(),
         message=STATUS_LABELS_JA[JobStatus.QUEUED],
         deploy_target=DeployTarget(deploy_target),

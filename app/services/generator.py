@@ -29,7 +29,6 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from app.schemas import ModelType
 from app.services.svg_parser import ParsedSvg
 
 # タイムスタンプは日本標準時 (JST, UTC+9) で統一する。
@@ -37,20 +36,9 @@ JST = timezone(timedelta(hours=9))
 
 # templates/ はプロジェクト直下 (app/services/generator.py から 2 つ上)。
 TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates"
-# DLC 用テンプレートは templates/dlc/ に置く（同じファイル名・出力名）。
-DLC_TEMPLATE_DIR = TEMPLATE_DIR / "dlc"
 
 # 出力する固定モデルファイル名 (§23.5)。
 MODEL_ONNX_NAME = "model.onnx"
-# DLC で同梱する固定ファイル名 (packager.DLC_PT_NAME / DLC_CONFIG_NAME と一致)。
-MODEL_PT_NAME = "model.pt"
-DLC_CONFIG_NAME = "pytorch_config.yaml"
-
-
-def _template_dir_for(model_type: ModelType | str) -> Path:
-    """モデル種別に応じたテンプレートディレクトリを返す。"""
-    mt = ModelType(model_type) if not isinstance(model_type, ModelType) else model_type
-    return DLC_TEMPLATE_DIR if mt is ModelType.DLC else TEMPLATE_DIR
 
 # レンダリングするテンプレートと出力名の対応。
 # CPU 用 (function.yaml) と GPU 用 (function-gpu.yaml) を常に両方生成する
@@ -109,9 +97,6 @@ def build_context(
         "timestamp": ts,
         "spec_json": spec_json,
         "modelOnnx": MODEL_ONNX_NAME,
-        # DLC 用テンプレートが参照する固定ファイル名。YOLO テンプレートでは未使用。
-        "modelPt": MODEL_PT_NAME,
-        "dlcConfig": DLC_CONFIG_NAME,
         # 後方互換: テンプレに modelName が残っていても壊れないよう識別子を割り当てる。
         "modelName": function_name,
     }
@@ -131,20 +116,15 @@ def render_all(
     context: dict,
     *,
     template_dir: str | Path | None = None,
-    model_type: ModelType | str = ModelType.YOLO_POSE,
 ) -> dict[str, Path]:
     """TEMPLATE_MAP の全テンプレートをレンダリングして out_dir に書き出す。
-
-    template_dir を明示すればそれを使う。未指定なら model_type に応じて
-    templates/ (YOLO) か templates/dlc/ (DLC) を選ぶ。
 
     Returns:
         {出力ファイル名: 書き出した Path} の辞書。
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    chosen_dir = Path(template_dir) if template_dir else _template_dir_for(model_type)
-    env = _env(chosen_dir)
+    env = _env(Path(template_dir) if template_dir else TEMPLATE_DIR)
 
     written: dict[str, Path] = {}
     for tpl_name, out_name in TEMPLATE_MAP.items():
