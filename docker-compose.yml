@@ -1,9 +1,15 @@
-# CVAT 骨格推定モデル デプロイファイル生成アプリ (T-12)
-# 3 サービス構成 (§11): web / worker / redis。
+# CVAT 骨格推定モデル デプロイファイル生成アプリ (T-12 / req_add02)
+# 4 サービス構成 (§11): web / worker / redis / cleanup。
 # web と worker は同一イメージ・同一 storage volume を共有する (§11.4)。
 # 起動: docker compose up --build   ->   http://<server-ip>:8050 (§3 / §11.5)
 # <server-ip> はアプリを動かす実機の IP。ハードコードせず 0.0.0.0 で待受するため、
 # クローンした PC の IP でそのままアクセスできる（IP 設定は不要）。
+#
+# req_add02: CVAT の serverless 配下への保存 + 自動デプロイを行うため、ホスト側 CVAT
+# ルート (CVAT_BASE_PATH) を web / worker に host==container の同一パスで bind mount する
+# (§5.2)。deploy script は worker が subprocess 実行する (§8.4 / §14.3)。
+# CVAT_BASE_PATH が未設定 (空) の場合は CVAT 保存 + 自動デプロイをスキップし zip のみ
+# 生成するため、bind mount にはプレースホルダの既定値を用いて compose が壊れないようにする。
 
 services:
   redis:
@@ -20,21 +26,35 @@ services:
     environment:
       - REDIS_HOST=redis
       - STORAGE_DIR=/storage
+      # 事前チェック (serverless / deploy script の存在確認 §13) のため web にも渡す。
+      - CVAT_BASE_PATH=${CVAT_BASE_PATH:-}
+      - DEPLOY_TIMEOUT_SECONDS=${DEPLOY_TIMEOUT_SECONDS:-600}
     volumes:
       - storage:/storage
+      # ホスト側 CVAT リポジトリを同一パスで参照 (§5.2)。未設定時はプレースホルダ。
+      - ${CVAT_BASE_PATH:-/tmp/cvat_placeholder}:${CVAT_BASE_PATH:-/tmp/cvat_placeholder}
     depends_on:
       - redis
     restart: unless-stopped
 
   worker:
     build: .
-    # 重い処理 (ONNX変換/生成/zip) を担当。キュー名は settings.rq_queue_name と一致 (§16.4)。
+    # 重い処理 (ONNX変換/生成/zip) と CVAT 保存 + deploy script 実行を担当 (§8.4)。
+    # キュー名は settings.rq_queue_name と一致 (§16.4)。
+    # worker は 1 プロセスのため deploy は直列化される (§14.4 同時デプロイ制御の MVP 方針)。
     command: rq worker jobs --url redis://redis:6379/0
     environment:
       - REDIS_HOST=redis
       - STORAGE_DIR=/storage
+      - CVAT_BASE_PATH=${CVAT_BASE_PATH:-}
+      - DEPLOY_TIMEOUT_SECONDS=${DEPLOY_TIMEOUT_SECONDS:-600}
     volumes:
       - storage:/storage
+      # ホスト側 CVAT リポジトリ (deploy script の実行対象)。未設定時はプレースホルダ。
+      - ${CVAT_BASE_PATH:-/tmp/cvat_placeholder}:${CVAT_BASE_PATH:-/tmp/cvat_placeholder}
+      # deploy script が Docker/Nuclio を操作するためホストの Docker ソケットを渡す (§5.3)。
+      # 強い権限を持つため、ローカルネットワーク内の信頼できる環境でのみ使用する。
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - redis
     restart: unless-stopped
