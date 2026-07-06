@@ -38,6 +38,7 @@ from app.jobs.store import JobStore
 from app.jobs.tasks import job_dir, process_job
 from app.schemas import (
     STATUS_LABELS_JA,
+    DeployTarget,
     JobCreateResponse,
     JobRecord,
     JobStatus,
@@ -121,12 +122,13 @@ async def create_job(
     author: str = Form(...),
     display_name: str = Form(...),
     svg_label: str = Form(...),
+    deploy_target: str = Form("cpu"),
     svg: UploadFile = File(...),
     pt: UploadFile = File(...),
     store: JobStore = Depends(get_store),
     queue: Queue = Depends(get_job_queue),
 ):
-    """入力を検証し、ジョブを作成して enqueue する (§19.2 / F-02〜F-06 / req_add §4)。"""
+    """入力を検証し、ジョブを作成して enqueue する (§19.2 / F-02〜F-06 / req_add §4 / req_add02 §3)。"""
     # 1) テキスト入力の検証 (§14.1 / §14.2 / req_add §4)
     author = (author or "").strip()
     display_name = (display_name or "").strip()
@@ -137,6 +139,31 @@ async def create_job(
         raise HTTPException(status_code=400, detail="モデル表示名を入力してください")
     if not svg_label:
         raise HTTPException(status_code=400, detail="SVGラベル名を入力してください")
+
+    # 1.5) デプロイ対象の検証 (req_add02 §3.2)
+    deploy_target = (deploy_target or "").strip().lower()
+    if deploy_target not in (DeployTarget.CPU.value, DeployTarget.GPU.value):
+        raise HTTPException(
+            status_code=400, detail="デプロイ対象は CPU または GPU を選択してください"
+        )
+
+    # 1.6) CVAT 保存先 / deploy script の事前チェック (req_add02 §13)。
+    # CVAT_BASE_PATH 未設定時は CVAT 保存 + 自動デプロイをスキップするためチェック不要。
+    deploy_script_path: str | None = None
+    if settings.cvat_base_path:
+        serverless = settings.cvat_serverless_dir
+        if not serverless.is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail=f"CVAT serverless ディレクトリが見つかりません: {serverless}",
+            )
+        script = settings.deploy_script_path(deploy_target)
+        if not script.is_file():
+            raise HTTPException(
+                status_code=400,
+                detail=f"deploy スクリプトが見つかりません: {script}",
+            )
+        deploy_script_path = str(script)
 
     # 2) 拡張子の検証 (§14.3 / §14.4)
     _check_extension(svg, ".svg")
@@ -185,6 +212,9 @@ async def create_job(
         svg_path=str(svg_path),
         download_token=JobStore.generate_token(),
         message=STATUS_LABELS_JA[JobStatus.QUEUED],
+        deploy_target=DeployTarget(deploy_target),
+        cvat_base_path=settings.cvat_base_path,
+        deploy_script_path=deploy_script_path,
     )
     store.save(record)
 
@@ -205,6 +235,8 @@ async def get_job(job_id: str, store: JobStore = Depends(get_store)):
     if record is None:
         raise HTTPException(status_code=404, detail="ジョブが見つかりません")
 
+    # zip は併用のため、SUCCESS かつ zip が存在するときのみダウンロード URL を出す。
+    can_download = record.status == JobStatus.SUCCESS and bool(record.zip_path)
     return JobStatusResponse(
         job_id=record.job_id,
         status=record.status,
@@ -212,7 +244,13 @@ async def get_job(job_id: str, store: JobStore = Depends(get_store)):
         message=record.message,
         label_ja=STATUS_LABELS_JA.get(record.status, ""),
         error=record.error,
-        download_url=_download_url(record) if record.status == JobStatus.SUCCESS else None,
+        download_url=_download_url(record) if can_download else None,
+        deploy_target=record.deploy_target,
+        exported_folder_path=record.exported_folder_path,
+        deploy_script_path=record.deploy_script_path,
+        deploy_return_code=record.deploy_return_code,
+        deploy_stdout_tail=record.deploy_stdout_tail,
+        deploy_stderr_tail=record.deploy_stderr_tail,
     )
 
 
